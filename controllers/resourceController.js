@@ -6,7 +6,7 @@ const Post = require('../models/Post');
 // @access  Private
 const createThread = async (req, res) => {
     try {
-        const { title, description, content, tags, type, isCurated } = req.body;
+        const { title, description, content, tags, type, isCurated, isPaid, price } = req.body;
 
         let attachments = [];
         if (req.file) {
@@ -14,14 +14,17 @@ const createThread = async (req, res) => {
         }
 
         const thread = await Thread.create({
-            author: req.user.id,
+            author: req.user._id,
             title,
             description,
             content,
             tags: typeof tags === 'string' ? JSON.parse(tags) : tags, // Handle FormData stringification
             type,
             isCurated: isCurated === 'true' || isCurated === true,
-            attachments
+            attachments,
+            // V2.0: Monetization
+            isPaid: isPaid === 'true' || isPaid === true,
+            price: isPaid ? parseInt(price) || 0 : 0
         });
 
         res.status(201).json(thread);
@@ -86,9 +89,13 @@ const getThreads = async (req, res) => {
                     tags: 1,
                     type: 1,
                     isCurated: 1,
+                    isPaid: 1, // V2.0: Include monetization fields
+                    price: 1,  // V2.0
+                    attachments: 1, // Include attachments
                     createdAt: 1,
                     'author.name': 1,
                     'author.username': 1,
+                    'author.avatar': 1, // Include avatar
                     postCount: { $size: '$posts' },
                     upvoteCount: { $sum: '$posts.upvoteCount' }
                 }
@@ -114,11 +121,37 @@ const getThreadDetail = async (req, res) => {
             return res.status(404).json({ message: 'Thread not found' });
         }
 
+        // V2.0: Access Control for Paid Threads
+        let hasAccess = true;
+        const userId = req.user?._id?.toString();
+
+        if (thread.isPaid) {
+            if (!userId) {
+                // Not logged in, no access to paid content
+                hasAccess = false;
+            } else {
+                // Check if user is author or moderator first
+                const isAuthor = thread.author._id.toString() === userId;
+                const isModerator = thread.moderators.some(mod => mod._id.toString() === userId);
+
+                if (isAuthor || isModerator) {
+                    // Thread owners and moderators always have access
+                    hasAccess = true;
+                } else {
+                    // For regular users, check if they purchased
+                    const User = require('../models/User');
+                    const user = await User.findById(userId);
+                    const hasPurchased = user?.purchasedThreads?.includes(req.params.id);
+                    hasAccess = hasPurchased;
+                }
+            }
+        }
+
         const posts = await Post.find({ thread: req.params.id })
             .populate('author', 'name username avatar')
             .sort({ upvoteCount: -1, createdAt: 1 });
 
-        res.json({ thread, posts });
+        res.json({ thread, posts, hasAccess }); // Include hasAccess flag for frontend
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -144,7 +177,7 @@ const addPost = async (req, res) => {
 
         const post = await Post.create({
             thread: threadId,
-            author: req.user.id,
+            author: req.user._id,
             contentType,
             content,
             attachments,
@@ -152,14 +185,14 @@ const addPost = async (req, res) => {
         });
 
         // Send notification to thread owner for top-level posts and replies
-        if (thread.author.toString() !== req.user.id) {
+        if (thread.author.toString() !== req.user._id.toString()) {
             const Request = require('../models/Request');
             const User = require('../models/User');
-            const postAuthor = await User.findById(req.user.id);
+            const postAuthor = await User.findById(req.user._id);
             const isReply = !!req.body.parentPost;
 
             await Request.create({
-                sender: req.user.id,
+                sender: req.user._id,
                 receiver: thread.author,
                 type: 'notification',
                 message: `${postAuthor.name} ${isReply ? 'replied to a post' : 'added a new post'} in your thread "${thread.title}"|||THREAD:${threadId}`,
@@ -184,7 +217,7 @@ const toggleUpvote = async (req, res) => {
             return res.status(404).json({ message: 'Post not found' });
         }
 
-        const userId = req.user.id;
+        const userId = req.user._id.toString();
         const alreadyUpvoted = post.upvotes.includes(userId);
 
         if (alreadyUpvoted) {
@@ -215,8 +248,8 @@ const updateThread = async (req, res) => {
         }
 
         // Check if owner or moderator
-        const isOwner = thread.author.toString() === req.user.id;
-        const isMod = thread.moderators.includes(req.user.id);
+        const isOwner = thread.author.toString() === req.user._id.toString();
+        const isMod = thread.moderators.some(mod => mod.toString() === req.user._id.toString());
 
         if (!isOwner && !isMod) {
             return res.status(403).json({ message: 'Not authorized to edit this thread' });
@@ -227,6 +260,35 @@ const updateThread = async (req, res) => {
 
         await thread.save();
         res.json(thread);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Update thread price (V2.0)
+// @route   PUT /api/resources/thread/:id/price
+// @access  Private (Owner only)
+const updateThreadPrice = async (req, res) => {
+    try {
+        const { price, isPaid } = req.body;
+        const thread = await Thread.findById(req.params.id);
+
+        if (!thread) {
+            return res.status(404).json({ message: 'Thread not found' });
+        }
+
+        // Only owner can change price
+        const isOwner = thread.author.toString() === req.user._id.toString();
+        if (!isOwner) {
+            return res.status(403).json({ message: 'Only the thread owner can change pricing' });
+        }
+
+        // Update pricing
+        thread.isPaid = isPaid !== undefined ? isPaid : thread.isPaid;
+        thread.price = isPaid ? (parseInt(price) || 0) : 0;
+
+        await thread.save();
+        res.json({ message: 'Pricing updated successfully', thread });
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -243,7 +305,7 @@ const deleteThread = async (req, res) => {
         }
 
         // Only owner can delete
-        if (thread.author.toString() !== req.user.id) {
+        if (thread.author.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Only the author can delete this thread' });
         }
 
@@ -269,7 +331,7 @@ const addModerator = async (req, res) => {
         }
 
         // Only owner can add mods
-        if (thread.author.toString() !== req.user.id) {
+        if (thread.author.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Only the author can grant moderator privileges' });
         }
 
@@ -290,7 +352,7 @@ const addModerator = async (req, res) => {
         // Notify the user they've been made a moderator
         const Request = require('../models/Request');
         await Request.create({
-            sender: req.user.id,
+            sender: req.user._id,
             receiver: userToAdd._id,
             type: 'notification',
             message: `You have been granted moderator privileges on the thread "${thread.title}"|||THREAD:${thread.id}`,
@@ -315,9 +377,9 @@ const deletePost = async (req, res) => {
         }
 
         const thread = post.thread;
-        const isPostAuthor = post.author.toString() === req.user.id;
-        const isThreadOwner = thread.author.toString() === req.user.id;
-        const isThreadMod = thread.moderators.includes(req.user.id);
+        const isPostAuthor = post.author.toString() === req.user._id.toString();
+        const isThreadOwner = thread.author.toString() === req.user._id.toString();
+        const isThreadMod = thread.moderators.some(mod => mod.toString() === req.user._id.toString());
 
         if (!isPostAuthor && !isThreadOwner && !isThreadMod) {
             return res.status(403).json({ message: 'Not authorized to delete this post' });
@@ -338,10 +400,10 @@ const toggleGuideVote = async (req, res) => {
         const thread = await Thread.findById(req.params.id);
         if (!thread) return res.status(404).json({ message: 'Thread not found' });
 
-        const userId = req.user.id;
+        const userId = req.user._id.toString();
 
         // Prevent owner/moderator from voting
-        if (thread.author.toString() === userId || thread.moderators.includes(userId)) {
+        if (thread.author.toString() === userId || thread.moderators.some(mod => mod.toString() === userId)) {
             return res.status(403).json({ message: 'Owners and moderators cannot vote for GUIDE status' });
         }
 
@@ -374,8 +436,8 @@ const requestReview = async (req, res) => {
         if (!post) return res.status(404).json({ message: 'Post not found' });
 
         const thread = post.thread;
-        const isOwner = thread.author.toString() === req.user.id;
-        const isMod = thread.moderators.includes(req.user.id);
+        const isOwner = thread.author.toString() === req.user._id.toString();
+        const isMod = thread.moderators.some(mod => mod.toString() === req.user._id.toString());
 
         if (!isOwner && !isMod) {
             return res.status(403).json({ message: 'Only moderators/owners can request reviews' });
@@ -388,7 +450,7 @@ const requestReview = async (req, res) => {
         const request = await ReviewRequest.create({
             thread: thread._id,
             post: post._id,
-            requester: req.user.id,
+            requester: req.user._id,
             notes: req.body.notes || ''
         });
 
@@ -412,13 +474,13 @@ const requestReview = async (req, res) => {
         }
 
         // Remove requester from targets if they are there
-        targets.delete(req.user.id);
+        targets.delete(req.user._id.toString());
 
         const alertMessage = `[MISSION ALERT] Post flagged in "${thread.title}". Notes: ${req.body.notes || 'No notes provided.'}|||THREAD:${thread._id}`;
 
         for (const targetId of targets) {
             await Request.create({
-                sender: req.user.id,
+                sender: req.user._id,
                 receiver: targetId,
                 type: 'review_alert',
                 message: alertMessage,
@@ -444,14 +506,14 @@ const acknowledgeInstructions = async (req, res) => {
         }
 
         // Check if user is owner or moderator - they should never need to acknowledge
-        const isMod = thread.author.toString() === req.user.id || thread.moderators.includes(req.user.id);
+        const isMod = thread.author.toString() === req.user._id.toString() || thread.moderators.some(mod => mod.toString() === req.user._id.toString());
         if (isMod) {
             return res.json({ message: 'Moderator exemption - no acknowledgment needed', thread });
         }
 
         // Add user to acknowledged list if not already there
-        if (!thread.acknowledgedUsers.includes(req.user.id)) {
-            thread.acknowledgedUsers.push(req.user.id);
+        if (!thread.acknowledgedUsers.some(id => id.toString() === req.user._id.toString())) {
+            thread.acknowledgedUsers.push(req.user._id);
             await thread.save();
         }
 
@@ -469,7 +531,7 @@ const updateInstructions = async (req, res) => {
             return res.status(404).json({ message: 'Thread not found' });
         }
 
-        const isMod = thread.author.toString() === req.user.id || thread.moderators.includes(req.user.id);
+        const isMod = thread.author.toString() === req.user._id.toString() || thread.moderators.some(mod => mod.toString() === req.user._id.toString());
         if (!isMod) {
             return res.status(403).json({ message: 'Unauthorized' });
         }
@@ -498,7 +560,7 @@ const removeModerator = async (req, res) => {
         }
 
         // Only owner can remove mods
-        if (thread.author.toString() !== req.user.id) {
+        if (thread.author.toString() !== req.user._id.toString()) {
             return res.status(403).json({ message: 'Only the author can remove moderators' });
         }
 
@@ -517,11 +579,71 @@ const removeModerator = async (req, res) => {
     }
 };
 
+// @desc    Purchase a paid thread (V2.0)
+// @route   POST /api/resources/thread/:id/purchase
+// @access  Private
+const purchaseThread = async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const threadId = req.params.id;
+        const userId = req.user._id.toString();
+
+        // Find thread
+        const thread = await Thread.findById(threadId);
+        if (!thread) {
+            return res.status(404).json({ message: 'Thread not found' });
+        }
+
+        // Check if thread is actually paid
+        if (!thread.isPaid) {
+            return res.status(400).json({ message: 'This thread is free' });
+        }
+
+        // Find user
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if user already purchased
+        if (user.purchasedThreads.includes(threadId)) {
+            return res.status(400).json({ message: 'You already own this thread' });
+        }
+
+        // Check if user has enough stars
+        if (user.stars < thread.price) {
+            return res.status(400).json({
+                message: 'Insufficient stars',
+                required: thread.price,
+                current: user.stars
+            });
+        }
+
+        // Deduct stars and grant access
+        user.stars -= thread.price;
+        user.purchasedThreads.push(threadId);
+        await user.save();
+
+        res.json({
+            message: 'Thread purchased successfully',
+            stars: user.stars,
+            thread: {
+                _id: thread._id,
+                title: thread.title
+            }
+        });
+    } catch (error) {
+        console.error('Purchase thread error:', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     createThread,
     getThreads,
     getThreadDetail,
     updateThread,
+    updateThreadPrice, // V2.0
     deleteThread,
     addModerator,
     removeModerator,
@@ -532,4 +654,5 @@ module.exports = {
     toggleUpvote,
     requestReview,
     updateInstructions,
+    purchaseThread, // V2.0
 };

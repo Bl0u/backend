@@ -12,7 +12,11 @@ const threadSchema = mongoose.Schema({
     attachments: [{ type: String }], // Array of URLs
     moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     guideVotes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    acknowledgedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] // Users who acknowledged instructions
+    acknowledgedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], // Users who acknowledged instructions
+
+    // V2.0: Monetization
+    isPaid: { type: Boolean, default: false },
+    price: { type: Number, default: 0 } // Cost in stars
 }, {
     timestamps: true,
 });

@@ -4,11 +4,13 @@ const {
     updateUserProfile,
     getUsers,
     getUserById,
-    getUserByUsername
+    getUserByUsername,
+    topUpStars
 } = require('../controllers/userController');
 const { protect } = require('../middleware/authMiddleware');
 
 router.put('/profile', protect, updateUserProfile);
+router.post('/topup', protect, topUpStars); // V2.0: Top up stars
 router.get('/', getUsers);
 router.get('/:id', getUserById);
 router.get('/u/:username', getUserByUsername);

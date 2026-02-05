@@ -160,9 +160,40 @@ const getUserByUsername = async (req, res) => {
     }
 };
 
+// @desc    Top up stars (V2.0 - Dummy Implementation)
+// @route   POST /api/users/topup
+// @access  Private
+const topUpStars = async (req, res) => {
+    try {
+        const { amount } = req.body; // Amount of stars to add
+        const user = await User.findById(req.user._id);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ message: 'Invalid amount' });
+        }
+
+        // Dummy implementation: Just add stars without payment processing
+        user.stars += amount;
+        await user.save();
+
+        res.json({
+            message: `Successfully topped up ${amount} stars`,
+            stars: user.stars
+        });
+    } catch (error) {
+        console.error('Top up error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     updateUserProfile,
     getUsers,
     getUserById,
     getUserByUsername,
+    topUpStars,
 };

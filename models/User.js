@@ -168,7 +168,11 @@ const userSchema = mongoose.Schema({
         startDate: { type: Date },
         endDate: { type: Date }
     }],
-    planTemplate: { type: String }
+    planTemplate: { type: String },
+
+    // ===== V2.0: MONETIZATION FIELDS =====
+    stars: { type: Number, default: 0 }, // Virtual currency balance
+    purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }] // Threads user has bought access to
 }, {
     timestamps: true,
 });

@@ -5,6 +5,7 @@ const {
     getThreads,
     getThreadDetail,
     updateThread,
+    updateThreadPrice, // V2.0
     deleteThread,
     addModerator,
     removeModerator,
@@ -14,9 +15,10 @@ const {
     toggleUpvote,
     requestReview,
     acknowledgeInstructions,
-    updateInstructions
+    updateInstructions,
+    purchaseThread // V2.0
 } = require('../controllers/resourceController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, optionalAuth } = require('../middleware/authMiddleware');
 const multer = require('multer');
 const path = require('path');
 
@@ -34,12 +36,14 @@ const upload = multer({ storage });
 
 router.get('/', getThreads);
 router.post('/thread', protect, upload.single('file'), createThread);
-router.get('/thread/:id', getThreadDetail);
+router.get('/thread/:id', optionalAuth, getThreadDetail);
 router.put('/thread/:id', protect, updateThread);
+router.put('/thread/:id/price', protect, updateThreadPrice); // V2.0: Update thread price
 router.delete('/thread/:id', protect, deleteThread);
 router.post('/thread/:id/moderator', protect, addModerator);
 router.put('/thread/:id/guide', protect, toggleGuideVote);
 router.post('/thread/:id/post', protect, upload.single('file'), addPost);
+router.post('/thread/:id/purchase', protect, purchaseThread); // V2.0: Purchase thread
 router.delete('/post/:id', protect, deletePost);
 router.put('/post/:id/upvote', protect, toggleUpvote);
 router.post('/post/:id/review', protect, requestReview);
