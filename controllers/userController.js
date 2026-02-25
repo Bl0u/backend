@@ -36,37 +36,6 @@ const updateUserProfile = async (req, res) => {
         user.studyNote = req.body.studyNote !== undefined ? req.body.studyNote : user.studyNote;
         if (req.body.lookingForPartner !== undefined) user.lookingForPartner = req.body.lookingForPartner;
 
-        // ===== MENTOR PROFILE FIELDS =====
-        // 1️⃣ Identity
-        user.currentField = req.body.currentField || user.currentField;
-        user.universityGraduated = req.body.universityGraduated || user.universityGraduated;
-        // 2️⃣ Credibility
-        user.classRank = req.body.classRank || user.classRank;
-        user.gpa = req.body.gpa !== undefined ? req.body.gpa : user.gpa;
-        user.achievements = req.body.achievements || user.achievements;
-        user.featuredAchievement = req.body.featuredAchievement || user.featuredAchievement;
-        // 3️⃣ Focus
-        user.primaryMentorshipGoal = req.body.primaryMentorshipGoal || user.primaryMentorshipGoal;
-        user.secondaryMentorshipGoal = req.body.secondaryMentorshipGoal || user.secondaryMentorshipGoal;
-        user.fieldSpecificGuidanceDetails = req.body.fieldSpecificGuidanceDetails || user.fieldSpecificGuidanceDetails;
-        // 4️⃣ Style
-        user.mentorshipStyle = req.body.mentorshipStyle || user.mentorshipStyle;
-        user.interactionType = req.body.interactionType || user.interactionType;
-        // 5️⃣ Mentorship Approach & Match
-        user.mentoringApproach = req.body.mentoringApproach !== undefined ? req.body.mentoringApproach : user.mentoringApproach;
-        user.preferredMenteeTraits = req.body.preferredMenteeTraits || user.preferredMenteeTraits;
-        // 6️⃣ Commitment
-        user.sessionFrequency = req.body.sessionFrequency || user.sessionFrequency;
-        user.maxMentees = req.body.maxMentees !== undefined ? req.body.maxMentees : user.maxMentees;
-        // 7️⃣ Communication
-        user.expectedMenteeCommitment = req.body.expectedMenteeCommitment || user.expectedMenteeCommitment;
-        // 8️⃣ Mode
-        user.mentorshipMode = req.body.mentorshipMode || user.mentorshipMode;
-        // 9️⃣ Statement
-        user.mentorStatement = req.body.mentorStatement !== undefined ? req.body.mentorStatement : user.mentorStatement;
-        // Matching
-        if (req.body.lookingForMentee !== undefined) user.lookingForMentee = req.body.lookingForMentee;
-        if (req.body.mentorshipHistory) user.mentorshipHistory = req.body.mentorshipHistory;
         if (req.body.pitchQuestions) user.pitchQuestions = req.body.pitchQuestions;
         if (req.body.planTemplate !== undefined) user.planTemplate = req.body.planTemplate;
 
@@ -74,9 +43,6 @@ const updateUserProfile = async (req, res) => {
 
         res.json({
             _id: updatedUser._id,
-            // ... (keeping existing fields)
-            lookingForMentee: updatedUser.lookingForMentee,
-            mentorshipHistory: updatedUser.mentorshipHistory,
             pitchQuestions: updatedUser.pitchQuestions,
             planTemplate: updatedUser.planTemplate,
             token: req.headers.authorization.split(' ')[1],
@@ -90,7 +56,7 @@ const updateUserProfile = async (req, res) => {
 // @route   GET /api/users
 // @access  Public
 const getUsers = async (req, res) => {
-    const { role, lookingForPartner, lookingForMentee, search } = req.query;
+    const { role, lookingForPartner, search } = req.query;
     let query = {};
 
     if (role) {
@@ -101,10 +67,6 @@ const getUsers = async (req, res) => {
         query.lookingForPartner = true;
     }
 
-    if (lookingForMentee === 'true') {
-        query.lookingForMentee = true;
-    }
-
     // Search by multiple fields (case-insensitive)
     if (search) {
         query.$or = [
@@ -112,14 +74,11 @@ const getUsers = async (req, res) => {
             { name: { $regex: search, $options: 'i' } },
             { university: { $regex: search, $options: 'i' } },
             { major: { $regex: search, $options: 'i' } },
-            { currentField: { $regex: search, $options: 'i' } },
-            { universityGraduated: { $regex: search, $options: 'i' } },
             { skills: { $regex: search, $options: 'i' } },
             { interests: { $regex: search, $options: 'i' } }
         ];
         // If searching, ignore lookingFor filters to find specific users
         delete query.lookingForPartner;
-        delete query.lookingForMentee;
     }
 
     const users = await User.find(query).select('-password');
@@ -132,8 +91,6 @@ const getUsers = async (req, res) => {
 const getUserById = async (req, res) => {
     const user = await User.findById(req.params.id)
         .select('-password')
-        .populate('enrolledMentees.user', 'name username avatar role major academicLevel')
-        .populate('enrolledMentors.user', 'name username avatar role currentField universityGraduated')
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
@@ -149,8 +106,6 @@ const getUserById = async (req, res) => {
 const getUserByUsername = async (req, res) => {
     const user = await User.findOne({ username: req.params.username })
         .select('-password')
-        .populate('enrolledMentees.user', 'name username avatar role major academicLevel')
-        .populate('enrolledMentors.user', 'name username avatar role currentField universityGraduated')
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {

@@ -9,7 +9,11 @@ connectDB();
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true
+}));
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -19,13 +23,11 @@ app.get('/', (req, res) => {
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const resourceRoutes = require('./routes/resourceRoutes');
-const mentorshipRoutes = require('./routes/mentorshipRoutes');
 const path = require('path');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/resources', resourceRoutes);
-app.use('/api/mentorship', mentorshipRoutes);
 const requestRoutes = require('./routes/requestRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const chatRoutes = require('./routes/chatRoutes');
@@ -37,9 +39,6 @@ app.use('/api/chat', chatRoutes);
 app.use('/api/plans', planRoutes);
 
 // make uploads folder static
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// app.use('/api/mentorship', mentorshipRoutes);
 
 const PORT = process.env.PORT || 5000;
 

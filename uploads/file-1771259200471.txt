@@ -1,0 +1,30 @@
+1- will remove this entirely " Academic Standing & Credibility (Optional)"
+2- "Mentorship Focus" if mentor picked a goal "Academic guidance" pop a new field for class rank and GPA both are optional
+3- remove this "Accessibility Preferences (Optional)"
+4- add skills to the mentor profile so he can add as he wants
+
+8- convert current logic to just user -> no more student, mentor 
+9- we'll restructure the current profile, since no more roles, all profiles will have the same information and 2 buttons, looking for partner and open for mentoring
+10- when looking for partner is checked, used inquired to add more information related to what will others see in partner page ... etc
+11- if open for mentoring is checked, then user inquired to add more information related to what he's offering ... etc
+
+
+
+1- sticky pump
+2- pump threads
+3- navbar not long enough when logged in
+4- LearnCrew + Home in the navbar are too close
+5- Sneak peak in paid threads
+6- resources -> get a cool name for it instead of threads
+7- remove resources, partners, mentorship from default navbar, only display when logged in ? 
+	but leave there buttons on the home page as they are right now
+
+8- feels zoomed in, needs to minimize the items
+partner problem -> hookups
+
+adel
+1- CTA -> doesn't have to be with the lottie
+2- reduce the hold on hero section 
+3- solution section -> faster stacking
+4- pricing -> reduce scrolling time
+5- auto entrance

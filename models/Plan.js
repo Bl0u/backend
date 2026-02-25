@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 
 const planSchema = new mongoose.Schema({
-    mentor: {
+    partner1: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
     },
-    mentee: {
+    partner2: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
         required: true
