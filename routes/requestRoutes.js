@@ -9,7 +9,7 @@ const {
     markAsRead,
     checkConnection,
     endRelationship,
-    updateMentorshipNote,
+    updateRelationshipNote,
     getSentRequests,
     cancelRequest
 } = require('../controllers/requestController');
@@ -20,7 +20,7 @@ router.get('/received', protect, getReceivedRequests);
 router.get('/sent', protect, getSentRequests);
 router.get('/public', getPublicPitches); // Publicly viewable Hub
 router.put('/relationship/end', protect, endRelationship);
-router.put('/history/note', protect, updateMentorshipNote);
+router.put('/history/note', protect, updateRelationshipNote);
 router.put('/:id/claim', protect, claimPublicPitch);
 router.put('/:id/respond', protect, respondToRequest);
 router.delete('/:id/read', protect, markAsRead);

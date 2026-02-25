@@ -23,12 +23,13 @@ const wipe = async () => {
         console.log('\n📝 Creating test accounts...');
 
         const User = require('../models/User');
+        const Thread = require('../models/Thread');
         const hashedPassword = await bcrypt.hash('a', 10);
         const hashedPasswordB = await bcrypt.hash('b', 10);
         const hashedPasswordC = await bcrypt.hash('c', 10);
         const hashedPasswordD = await bcrypt.hash('d', 10);
 
-        // Account B - Mentor
+        // Account B - Mentor (Mentor B)
         const mentorB = await User.create({
             name: 'Mentor B',
             username: 'b',
@@ -51,7 +52,7 @@ const wipe = async () => {
             ]
         });
 
-        // Account A - Student
+        // Account A - Student (Student A)
         const studentA = await User.create({
             name: 'Student A',
             username: 'a',
@@ -59,33 +60,80 @@ const wipe = async () => {
             password: hashedPassword,
             role: 'student',
             major: 'Computer Science',
-            university: 'Global Tech University',
+            university: 'Sinai University',
             studyNote: 'Passionate software engineering student eager to learn and collaborate on exciting projects.',
             lookingForPartner: true,
             primaryStudyGoal: 'Concept mastery',
-            preferredStudyStyle: 'Discussion-based',
-            socialLinks: [
-                { platform: 'GitHub', url: 'https://github.com/studenta' },
-                { platform: 'LinkedIn', url: 'https://linkedin.com/in/studenta' }
-            ]
+            preferredStudyStyle: 'Discussion-based'
         });
 
-        // Account C - Student
+        // Threads for Student A
+        await Thread.create([
+            {
+                author: studentA._id,
+                title: 'Memory Management 101: Paging vs. Segmentation',
+                description: 'Deep dive into virtual memory for 3rd-year Engineering students.',
+                type: 'college',
+                tags: ['#OperatingSystems', '#SinaiUniversity', '#MemoryManagement', '#OS_Kernel', '#ComputerScience'],
+                isPaid: false
+            },
+            {
+                author: studentA._id,
+                title: 'Competitive Programming: From Zero to LeetCode Medium',
+                description: 'Essential patterns for technical interviews and coding contests.',
+                type: 'college',
+                tags: ['#DSA', '#Algorithms', '#ProgrammingRoadmap', '#CompetitiveProgramming', '#SinaiUniversity'],
+                isPaid: false
+            }
+        ]);
+
+        // Account C - Student (Student C)
         const studentC = await User.create({
             name: 'Student C',
             username: 'c',
             email: 'c@gmail.com',
             password: hashedPasswordC,
             role: 'student',
-            major: 'Design',
-            university: 'Creative Arts Academy',
-            studyNote: 'Creative designer seeking collaboration on innovative projects. Love crafting beautiful user experiences.',
+            major: 'Computer Science',
+            university: 'Cairo University',
+            studyNote: 'Intern at Google | Seeking System Architect position. Creative designer seeking collaboration on innovative projects.',
             lookingForPartner: true,
-            primaryStudyGoal: 'Interview preparation',
-            preferredStudyStyle: 'Problem-solving focused',
-            socialLinks: [
-                { platform: 'LinkedIn', url: 'https://linkedin.com/in/studentc' }
-            ]
+            stars: 500
+        });
+
+        // Threads for Student C
+        await Thread.create([
+            {
+                author: studentC._id,
+                title: 'System Design Frameworks for Scale: The Architect’s Blueprint',
+                description: 'Exclusive insights into how to handle 100k+ TPS, database sharding, and global consistency models. Focused on Google/Meta/Amazon technical standards.',
+                type: 'interview',
+                tags: ['#SystemDesign', '#Scalability', '#GoogleInterview', '#SoftwareArchitecture', '#CloudComputing', '#PaidContent'],
+                isPaid: true,
+                price: 50
+            },
+            {
+                author: studentC._id,
+                title: 'Solving Complex Navier-Stokes Applications in Aero-Dynamics',
+                description: 'High-level derivation of fluid flow equations for mechanical and civil engineering projects.',
+                type: 'college',
+                tags: ['#FluidMechanics', '#Aerodynamics', '#EngineeringMath', '#MechanicalEngineering', '#Physics', '#CairoUniversity'],
+                isPaid: true,
+                price: 30
+            }
+        ]);
+
+        // Account Peter - New Student
+        const peter = await User.create({
+            name: 'Peter Chen',
+            username: 'peter',
+            email: 'peter@gmail.com',
+            password: hashedPassword, // 'a'
+            role: 'student',
+            major: 'Computer Science & AI',
+            university: 'Cairo University',
+            studyNote: 'Junior student specializing in AI and distributed systems. Active contributor to open-source OS projects.',
+            lookingForPartner: true
         });
 
         // Account D - Student
@@ -96,22 +144,14 @@ const wipe = async () => {
             password: hashedPasswordD,
             role: 'student',
             major: 'Statistics & Analytics',
-            university: 'Data Insights Institute',
-            studyNote: 'Data enthusiast exploring machine learning and statistical modeling. Always looking for new datasets to analyze!',
-            lookingForPartner: true,
-            primaryStudyGoal: 'Field-specific learning',
-            preferredStudyStyle: 'Teaching/explaining',
-            socialLinks: [
-                { platform: 'GitHub', url: 'https://github.com/studentd' },
-                { platform: 'LinkedIn', url: 'https://linkedin.com/in/studentd' }
-            ]
+            university: 'Data Insights Institute'
         });
 
-        console.log('✅ Created 4 test accounts:');
-        console.log('   🧑‍🏫 Mentor: b / b@gmail.com (password: b)');
-        console.log('   👨‍🎓 Student: a / a@gmail.com (password: a)');
-        console.log('   👩‍🎓 Student: c / c@gmail.com (password: c)');
-        console.log('   👨‍🎓 Student: d / d@gmail.com (password: d)');
+        console.log('✅ Created pitch-ready accounts and threads:');
+        console.log('   👨‍🎓 Student Peter: peter / a (Cairo University)');
+        console.log('   👨‍🎓 Student A: a / a (Sinai University) - 2 Free Threads');
+        console.log('   👩‍🎓 Student C: c / c (Cairo University) - 2 Paid Threads (Google Context)');
+        console.log('   🧑‍🏫 Mentor B: b / b');
         console.log('\n✨ All accounts are pre-configured and ready to use!');
 
         process.exit();

@@ -28,20 +28,19 @@ const sendRequest = async (req, res) => {
 
         // Also check if currently enrolled (active relationship)
         const currentUser = await User.findById(req.user.id);
-        const fieldName = type === 'mentorship' ? 'enrolledMentees' : 'enrolledPartners';
-        const isCurrentlyEnrolled = currentUser[fieldName]?.some(
+        const isCurrentlyEnrolled = currentUser.enrolledPartners?.some(
             entry => entry.user.toString() === receiverId && entry.status === 'active'
         );
 
         if (isCurrentlyEnrolled) {
-            return res.status(400).json({ message: `You already have an active ${type} with this user` });
+            return res.status(400).json({ message: `You already have an active partnership with this user` });
         }
     }
 
     const request = await Request.create({
         sender: req.user.id,
         receiver: isPublic ? undefined : receiverId,
-        type,
+        type: 'partner', // Default to partner
         message,
         pitch,
         isPublic: !!isPublic
@@ -50,47 +49,51 @@ const sendRequest = async (req, res) => {
     res.status(201).json(request);
 };
 
-// @desc    Get received requests (Private)
+// @desc    Get received requests
 // @route   GET /api/requests/received
 // @access  Private
 const getReceivedRequests = async (req, res) => {
-    if (!req.user || !req.user.id) {
-        return res.status(401).json({ message: 'Authentication required' });
+    try {
+        const requests = await Request.find({ receiver: req.user.id })
+            .populate('sender', 'name username role profilePicture')
+            .sort({ createdAt: -1 });
+        res.json(requests);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
     }
-
-    const requests = await Request.find({ receiver: req.user.id })
-        .populate('sender', 'name username avatar role major academicLevel')
-        .sort({ createdAt: -1 });
-    res.json(requests);
 };
 
-// @desc    Get sent requests (Private)
+// @desc    Get sent requests
 // @route   GET /api/requests/sent
 // @access  Private
 const getSentRequests = async (req, res) => {
-    if (!req.user || !req.user.id) {
-        return res.status(401).json({ message: 'Authentication required' });
+    try {
+        const requests = await Request.find({ sender: req.user.id })
+            .populate('receiver', 'name username role profilePicture')
+            .sort({ createdAt: -1 });
+        res.json(requests);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
     }
-
-    const requests = await Request.find({ sender: req.user.id })
-        .populate('receiver', 'name username avatar role major academicLevel')
-        .sort({ createdAt: -1 });
-    res.json(requests);
 };
 
-// @desc    Get all public pitches (Pitch Hub)
+// @desc    Get public pitches
 // @route   GET /api/requests/public
 // @access  Public
 const getPublicPitches = async (req, res) => {
-    const pitches = await Request.find({ isPublic: true, status: 'pending' })
-        .populate('sender', 'name username avatar role major academicLevel')
-        .sort({ createdAt: -1 });
-    res.json(pitches);
+    try {
+        const pitches = await Request.find({ isPublic: true, status: 'pending' })
+            .populate('sender', 'name username role profilePicture')
+            .sort({ createdAt: -1 });
+        res.json(pitches);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
 };
 
-// @desc    Claim a public pitch (Mentor)
+// @desc    Claim a public pitch (Partner)
 // @route   PUT /api/requests/:id/claim
-// @access  Private (Mentors Only)
+// @access  Private
 const claimPublicPitch = async (req, res) => {
     const request = await Request.findById(req.params.id);
 
@@ -98,45 +101,54 @@ const claimPublicPitch = async (req, res) => {
         return res.status(404).json({ message: 'Public pitch not found or already claimed' });
     }
 
-    // Role check: Only mentors can claim
-    const user = await User.findById(req.user.id);
-    if (user.role !== 'mentor') {
-        return res.status(403).json({ message: 'Only mentors can claim public pitches' });
-    }
+    const claimingUser = await User.findById(req.user.id);
 
     request.receiver = req.user.id;
     request.claimedBy = req.user.id;
     request.status = 'accepted';
     await request.save();
 
-    // Enroll Student and Mentor
-    const student = await User.findById(request.sender);
-    if (student) {
-        // Add to mentor's enrolledMentees
-        user.enrolledMentees.push({ user: student._id, status: 'active' });
+    // Enroll Partners
+    const sender = await User.findById(request.sender);
+    if (sender) {
+        // Add to both users' enrolledPartners
+        claimingUser.enrolledPartners.push({ user: sender._id, status: 'active' });
+        await claimingUser.save();
 
-        // Add to mentor history (Track Record)
-        user.mentorshipHistory.push({
-            projectName: request.pitch?.get('Hook') || 'Pro-Bono Mentorship',
-            menteeName: student.name,
-            menteeUsername: student.username,
-            pitchAnswers: request.pitch // Store full pitch
-        });
-        await user.save();
+        sender.enrolledPartners.push({ user: claimingUser._id, status: 'active' });
+        await sender.save();
 
-        // Add to student's enrolledMentors
-        student.enrolledMentors.push({ user: user._id, status: 'active' });
-        await student.save();
+        // Create collaboration plan
+        try {
+            const Plan = require('../models/Plan');
+            const defaultContent = `# Collaboration Plan\n\nWelcome to your shared project roadmap.`;
 
-        // Create notification for student inbox
-        await Request.create({
-            sender: req.user.id,
-            receiver: student._id,
-            type: 'mentorship',
-            message: `MISSION ACCEPTED: I have claimed your pitch "${request.pitch?.get('Hook')}". Check your dashboard!`,
-            status: 'accepted',
-            isPublic: false
-        });
+            const newPlan = new Plan({
+                partner1: req.user.id,
+                partner2: sender._id,
+                versions: [{
+                    versionMajor: 0,
+                    versionMinor: 0,
+                    title: 'Initial Collaboration Plan',
+                    content: claimingUser.planTemplate || sender.planTemplate || defaultContent,
+                    authorName: claimingUser.name,
+                    comments: []
+                }]
+            });
+            await newPlan.save();
+
+            // Create notification for sender
+            await Request.create({
+                sender: req.user.id,
+                receiver: sender._id,
+                type: 'notification',
+                message: `COLLABORATION STARTED: ${claimingUser.name} claimed your pitch "${request.pitch?.get('Hook')}". Check your dashboard!|||PLAN:${newPlan._id}`,
+                status: 'accepted',
+                isPublic: false
+            });
+        } catch (error) {
+            console.error('Plan creation error in claim:', error);
+        }
     }
 
     res.json({ message: 'Pitch claimed successfully', request });
@@ -161,95 +173,74 @@ const respondToRequest = async (req, res) => {
     await request.save();
 
     if (status === 'accepted') {
-        // Fetch users at the start so they're available for all logic below
         const sender = await User.findById(request.sender);
         const receiver = await User.findById(req.user.id);
 
-        // Handle enrollment (mentorship or partnership)
         if (sender && receiver) {
-            if (request.type === 'mentorship') {
-                const activeMentee = receiver.enrolledMentees.find(m => m.user.toString() === sender._id.toString() && m.status === 'active');
-                if (!activeMentee) {
-                    receiver.enrolledMentees.push({ user: sender._id, status: 'active' });
-                    receiver.mentorshipHistory.push({
-                        projectName: request.pitch?.get('Hook') || 'Mentorship Request',
-                        menteeName: sender.name,
-                        menteeUsername: sender.username,
-                        pitchAnswers: request.pitch
-                    });
-                    await receiver.save();
+            const activePartner = receiver.enrolledPartners.find(p => p.user.toString() === sender._id.toString() && p.status === 'active');
+            if (!activePartner) {
+                receiver.enrolledPartners.push({ user: sender._id, status: 'active' });
+                await receiver.save();
 
-                    sender.enrolledMentors.push({ user: receiver._id, status: 'active' });
-                    await sender.save();
-                }
-            } else if (request.type === 'partner') {
-                const activePartner = receiver.enrolledPartners.find(p => p.user.toString() === sender._id.toString() && p.status === 'active');
-                if (!activePartner) {
-                    receiver.enrolledPartners.push({ user: sender._id, status: 'active' });
-                    await receiver.save();
-
-                    sender.enrolledPartners.push({ user: receiver._id, status: 'active' });
-                    await sender.save();
-                }
+                sender.enrolledPartners.push({ user: receiver._id, status: 'active' });
+                await sender.save();
             }
-        }
 
-        // Send inbox notification to sender
-        let notificationMessage = `Your ${request.type} request has been accepted! 🎉`;
-
-        // For mentorship acceptance, create default plan and add ID to notification
-        if (request.type === 'mentorship' && receiver) {
+            // Create collaboration plan
             try {
                 const Plan = require('../models/Plan');
-                const existingPlan = await Plan.findOne({ mentor: req.user.id, mentee: request.sender });
+                // Check if plan exists
+                const existingPlan = await Plan.findOne({
+                    $or: [
+                        { partner1: receiver._id, partner2: sender._id },
+                        { partner1: sender._id, partner2: receiver._id }
+                    ]
+                });
 
                 if (!existingPlan) {
-                    const defaultContent = `# Welcome!
-
-This is your personalized mentorship roadmap. Your mentor will update this regularly with goals, milestones, and resources.
-
-## Getting Started
-
-Your mentor will customize this plan based on your goals and the project pitch you submitted.`;
-
+                    const defaultContent = `# Collaboration Plan\n\nWelcome! Work together on your project goals here.`;
                     const newPlan = new Plan({
-                        mentor: req.user.id,
-                        mentee: request.sender,
+                        partner1: receiver._id,
+                        partner2: sender._id,
                         versions: [{
                             versionMajor: 0,
                             versionMinor: 0,
-                            title: 'Initial Mentorship Plan',
-                            content: receiver.planTemplate || defaultContent,
+                            title: 'Initial Collaboration Plan',
+                            content: receiver.planTemplate || sender.planTemplate || defaultContent,
                             authorName: receiver.name,
                             comments: []
                         }]
                     });
                     await newPlan.save();
 
-                    notificationMessage = `Your mentorship request has been accepted! 🎉 Check your initial plan.|||PLAN:${newPlan._id}`;
+                    await Request.create({
+                        sender: req.user.id,
+                        receiver: sender._id,
+                        type: 'notification',
+                        message: `Your partnership request has been accepted! 🎉 Collaborative plan created.|||PLAN:${newPlan._id}`,
+                        status: 'accepted',
+                        isPublic: false
+                    });
                 } else {
-                    notificationMessage = `Your mentorship request has been accepted! 🎉 Check your plan.|||PLAN:${existingPlan._id}`;
+                    await Request.create({
+                        sender: req.user.id,
+                        receiver: sender._id,
+                        type: 'notification',
+                        message: `Your partnership request has been accepted! 🎉 Check your shared plan.|||PLAN:${existingPlan._id}`,
+                        status: 'accepted',
+                        isPublic: false
+                    });
                 }
             } catch (error) {
                 console.error('Plan creation error in acceptance:', error);
-                // Continue with notification even if plan creation fails
             }
         }
-
-        await Request.create({
-            sender: req.user.id,
-            receiver: request.sender,
-            type: 'notification',
-            message: notificationMessage,
-            status: 'accepted',
-            isPublic: false
-        });
     } else if (status === 'rejected') {
         await Request.create({
             sender: req.user.id,
             receiver: request.sender,
             type: 'notification',
-            message: `Your ${request.type} request was declined. You may try again later.`,
+            message: `Your partnership request was declined. You may try again later.`,
             status: 'rejected',
             isPublic: false
         });
@@ -258,37 +249,49 @@ Your mentor will customize this plan based on your goals and the project pitch y
     res.json(request);
 };
 
-// @desc    Mark notification as read (delete it)
+// @desc    Update partnership record note
+// @route   PUT /api/requests/history/note
+// @access  Private
+const updateRelationshipNote = async (req, res) => {
+    try {
+        const { historyId, notes } = req.body;
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const historyItem = user.partnerHistory.id(historyId);
+        if (!historyItem) {
+            return res.status(404).json({ message: 'Record not found' });
+        }
+
+        historyItem.notes = notes;
+        await user.save();
+
+        res.json({ message: 'Note updated successfully', historyItem });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// @desc    Mark notification as read
 // @route   DELETE /api/requests/:id/read
 // @access  Private
 const markAsRead = async (req, res) => {
     try {
-        const request = await Request.findById(req.params.id);
-
-        if (!request) {
-            return res.status(404).json({ message: 'Notification not found' });
-        }
-
-        // Verify the user is the receiver
-        if (request.receiver.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'Not authorized' });
-        }
-
-        // Allow marking any request as read (remove type restriction)
         await Request.findByIdAndDelete(req.params.id);
-
-        res.json({ message: 'Notification marked as read' });
+        res.json({ message: 'Notification cleared' });
     } catch (error) {
-        console.error('Mark as read error:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ message: 'Server Error' });
     }
 };
 
-// @desc    End an active mentorship or partnership
+// @desc    End an active partnership
 // @route   PUT /api/requests/relationship/end
 // @access  Private
 const endRelationship = async (req, res) => {
-    const { targetUserId, type } = req.body; // type: 'mentorship' or 'partner'
+    const { targetUserId } = req.body;
     const currentUser = await User.findById(req.user.id);
     const targetUser = await User.findById(targetUserId);
 
@@ -298,89 +301,48 @@ const endRelationship = async (req, res) => {
 
     let relationshipFound = false;
 
-    if (type === 'mentorship') {
-        // Handle mentorship ending
-        if (currentUser.role === 'mentor') {
-            const mentee = currentUser.enrolledMentees.find(m => m.user.toString() === targetUserId && m.status === 'active');
-            if (mentee) {
-                mentee.status = 'completed';
-                mentee.endDate = new Date();
-                relationshipFound = true;
-            }
-        } else {
-            const mentor = currentUser.enrolledMentors.find(m => m.user.toString() === targetUserId && m.status === 'active');
-            if (mentor) {
-                mentor.status = 'completed';
-                mentor.endDate = new Date();
-                relationshipFound = true;
-            }
-        }
+    // Handle partnership ending
+    const partnerA = currentUser.enrolledPartners.find(p => p.user.toString() === targetUserId && p.status === 'active');
+    if (partnerA) {
+        partnerA.status = 'completed';
+        partnerA.endDate = new Date();
+        relationshipFound = true;
 
-        if (targetUser.role === 'mentor') {
-            const mentee = targetUser.enrolledMentees.find(m => m.user.toString() === req.user.id && m.status === 'active');
-            if (mentee) {
-                mentee.status = 'completed';
-                mentee.endDate = new Date();
-            }
-        } else {
-            const mentor = targetUser.enrolledMentors.find(m => m.user.toString() === req.user.id && m.status === 'active');
-            if (mentor) {
-                mentor.status = 'completed';
-                mentor.endDate = new Date();
-            }
-        }
+        // Add to history
+        currentUser.partnerHistory.push({
+            partnerName: targetUser.name,
+            partnerUsername: targetUser.username,
+            startDate: partnerA.startDate,
+            endDate: new Date()
+        });
+    }
 
-        // Update mentor history
-        const mentor = currentUser.role === 'mentor' ? currentUser : targetUser;
-        const student = currentUser.role === 'mentor' ? targetUser : currentUser;
-        const historyItem = mentor.mentorshipHistory.reverse().find(h => h.menteeUsername === student.username);
-        if (historyItem) {
-            historyItem.endDate = new Date();
-        }
+    const partnerB = targetUser.enrolledPartners.find(p => p.user.toString() === req.user.id && p.status === 'active');
+    if (partnerB) {
+        partnerB.status = 'completed';
+        partnerB.endDate = new Date();
 
-    } else if (type === 'partner') {
-        // Handle partnership ending
-        const partnerA = currentUser.enrolledPartners.find(p => p.user.toString() === targetUserId && p.status === 'active');
-        if (partnerA) {
-            partnerA.status = 'completed';
-            partnerA.endDate = new Date();
-            relationshipFound = true;
-
-            // Add to history
-            currentUser.partnerHistory.push({
-                partnerName: targetUser.name,
-                partnerUsername: targetUser.username,
-                startDate: partnerA.startDate,
-                endDate: new Date()
-            });
-        }
-
-        const partnerB = targetUser.enrolledPartners.find(p => p.user.toString() === req.user.id && p.status === 'active');
-        if (partnerB) {
-            partnerB.status = 'completed';
-            partnerB.endDate = new Date();
-
-            // Add to history
-            targetUser.partnerHistory.push({
-                partnerName: currentUser.name,
-                partnerUsername: currentUser.username,
-                startDate: partnerB.startDate,
-                endDate: new Date()
-            });
-        }
+        // Add to history
+        targetUser.partnerHistory.push({
+            partnerName: currentUser.name,
+            partnerUsername: currentUser.username,
+            startDate: partnerB.startDate,
+            endDate: new Date()
+        });
     }
 
     if (!relationshipFound) {
-        return res.status(400).json({ message: `No active ${type} found with this user` });
+        return res.status(400).json({ message: `No active partnership found with this user` });
     }
 
-    // Mark ALL relevant requests as 'completed' to unblock new requests
+    // Mark ALL relevant requests as 'completed'
     await Request.updateMany(
         {
             $or: [
-                { sender: req.user.id, receiver: targetUserId, type, status: { $in: ['accepted', 'pending'] } },
-                { sender: targetUserId, receiver: req.user.id, type, status: { $in: ['accepted', 'pending'] } }
-            ]
+                { sender: req.user.id, receiver: targetUserId, status: { $in: ['accepted', 'pending'] } },
+                { sender: targetUserId, receiver: req.user.id, status: { $in: ['accepted', 'pending'] } }
+            ],
+            type: 'partner'
         },
         { status: 'completed' }
     );
@@ -389,40 +351,18 @@ const endRelationship = async (req, res) => {
     await targetUser.save();
 
     // Send notification to the other user
-    const relationshipType = type === 'mentorship' ? 'mentorship' : 'partnership';
     await Request.create({
         sender: req.user.id,
         receiver: targetUserId,
         type: 'notification',
-        message: `Your ${relationshipType} with ${currentUser.name} has ended. Thank you for your collaboration! 🤝`,
+        message: `Your partnership with ${currentUser.name} has ended. Thank you for your collaboration! 🤝`,
         status: 'completed',
         isPublic: false
     });
 
-    res.json({ message: `${type} successfully completed`, currentUser });
+    res.json({ message: `Partnership successfully completed`, currentUser });
 };
 
-// @desc    Update a mentorship history note
-// @route   PUT /api/requests/history/note
-// @access  Private (Mentors Only)
-const updateMentorshipNote = async (req, res) => {
-    const { historyId, notes } = req.body;
-    const user = await User.findById(req.user.id);
-
-    if (!user || user.role !== 'mentor') {
-        return res.status(403).json({ message: 'Only mentors can add notes to history' });
-    }
-
-    const historyItem = user.mentorshipHistory.id(historyId);
-    if (!historyItem) {
-        return res.status(404).json({ message: 'History record not found' });
-    }
-
-    historyItem.notes = notes;
-    await user.save();
-
-    res.json({ message: 'Note updated successfully', historyItem });
-};
 
 // @desc    Delete/Cancel a request
 // @route   DELETE /api/requests/:id
@@ -440,7 +380,7 @@ const cancelRequest = async (req, res) => {
     }
 
     if (request.status !== 'pending') {
-        return res.status(400).json({ message: 'Only pending requests can be cancelled. Active mentorships must be ended via the dashboard.' });
+        return res.status(400).json({ message: 'Only pending requests can be cancelled. Active partnerships must be ended via the dashboard.' });
     }
 
     await Request.findByIdAndDelete(req.params.id);
@@ -474,6 +414,6 @@ module.exports = {
     markAsRead,
     checkConnection,
     endRelationship,
-    updateMentorshipNote,
-    cancelRequest
+    cancelRequest,
+    updateRelationshipNote
 };
