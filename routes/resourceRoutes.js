@@ -3,6 +3,7 @@ const router = express.Router();
 const {
     createThread,
     getThreads,
+    getUniqueTags,
     getThreadDetail,
     updateThread,
     updateThreadPrice, // V2.0
@@ -35,6 +36,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 router.get('/', getThreads);
+router.get('/tags', getUniqueTags);
 router.post('/thread', protect, upload.single('file'), createThread);
 router.get('/thread/:id', optionalAuth, getThreadDetail);
 router.put('/thread/:id', protect, updateThread);

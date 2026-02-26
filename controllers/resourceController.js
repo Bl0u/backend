@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Thread = require('../models/Thread');
 const Post = require('../models/Post');
 
@@ -38,8 +39,12 @@ const createThread = async (req, res) => {
 // @access  Public
 const getThreads = async (req, res) => {
     try {
-        const { search, tag, curated } = req.query;
+        const { search, tag, tags, curated, author } = req.query;
         let query = {};
+
+        if (author) {
+            query.author = new mongoose.Types.ObjectId(author);
+        }
 
         if (curated === 'true') {
             query.isCurated = true;
@@ -47,7 +52,11 @@ const getThreads = async (req, res) => {
             query.isCurated = false;
         }
 
-        if (tag) {
+        // Support single tag (legacy) or multiple tags
+        if (tags) {
+            const tagsArray = tags.split(',').map(t => t.startsWith('#') ? t : `#${t}`);
+            query.tags = { $all: tagsArray };
+        } else if (tag) {
             query.tags = tag.startsWith('#') ? tag : `#${tag}`;
         }
 
@@ -91,6 +100,7 @@ const getThreads = async (req, res) => {
                     isCurated: 1,
                     isPaid: 1, // V2.0: Include monetization fields
                     price: 1,  // V2.0
+                    purchasesCount: { $size: { $ifNull: ['$purchasers', []] } },
                     attachments: 1, // Include attachments
                     createdAt: 1,
                     'author.name': 1,
@@ -638,9 +648,24 @@ const purchaseThread = async (req, res) => {
     }
 };
 
+// @desc    Get all unique tags used across threads
+// @route   GET /api/resources/tags
+// @access  Public
+const getUniqueTags = async (req, res) => {
+    try {
+        const uniqueTags = await Thread.distinct('tags');
+
+        // Return raw tags, frontend can process
+        res.json(uniqueTags);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     createThread,
     getThreads,
+    getUniqueTags,
     getThreadDetail,
     updateThread,
     updateThreadPrice, // V2.0

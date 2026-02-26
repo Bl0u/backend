@@ -16,7 +16,8 @@ const threadSchema = mongoose.Schema({
 
     // V2.0: Monetization
     isPaid: { type: Boolean, default: false },
-    price: { type: Number, default: 0 } // Cost in stars
+    price: { type: Number, default: 0 }, // Cost in stars
+    purchasers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
     timestamps: true,
 });
