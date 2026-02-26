@@ -8,32 +8,46 @@ const updateUserProfile = async (req, res) => {
 
     if (user) {
         // Basic Info
+        // ===== STUDENT PROFILE 1.2 (LEAN) =====
+        // 1️⃣ Core Identity
         user.name = req.body.name || user.name;
-        user.email = req.body.email || user.email;
         user.username = req.body.username || user.username;
-        user.socialLinks = req.body.socialLinks || user.socialLinks;
-        user.skills = req.body.skills || user.skills;
-        user.interests = req.body.interests || user.interests;
-
-        // ===== STUDENT PROFILE FIELDS =====
         user.major = req.body.major || user.major;
         user.academicLevel = req.body.academicLevel || user.academicLevel;
         user.university = req.body.university || user.university;
-        if (req.body.currentCourses) user.currentCourses = req.body.currentCourses;
-        user.primaryStudyGoal = req.body.primaryStudyGoal || user.primaryStudyGoal;
-        user.secondaryStudyGoal = req.body.secondaryStudyGoal || user.secondaryStudyGoal;
-        user.fieldSpecificDetails = req.body.fieldSpecificDetails !== undefined ? req.body.fieldSpecificDetails : user.fieldSpecificDetails;
-        user.preferredStudyStyle = req.body.preferredStudyStyle || user.preferredStudyStyle;
-        user.studyPacePreference = req.body.studyPacePreference || user.studyPacePreference;
-        if (req.body.availability) user.availability = req.body.availability;
+        user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
+        user.socialLinks = req.body.socialLinks || user.socialLinks;
+
+        // 2️⃣ Partner Needs
+        user.partnerType = req.body.partnerType || user.partnerType;
+        user.matchingGoal = req.body.matchingGoal || user.matchingGoal;
+        if (req.body.topics) user.topics = req.body.topics;
+        user.neededFromPartner = req.body.neededFromPartner !== undefined ? req.body.neededFromPartner : user.neededFromPartner;
+
+        // 3️⃣ Location & Logistics
+        user.timezone = req.body.timezone || user.timezone;
+        if (req.body.languages) user.languages = req.body.languages;
         user.studyMode = req.body.studyMode || user.studyMode;
         if (req.body.preferredTools) user.preferredTools = req.body.preferredTools;
-        user.communicationStyle = req.body.communicationStyle || user.communicationStyle;
+
+        // 4️⃣ Availability & Commitment
+        if (req.body.availability) {
+            user.availability = {
+                days: req.body.availability.days || user.availability.days,
+                timeRanges: req.body.availability.timeRanges || user.availability.timeRanges
+            };
+        }
         user.commitmentLevel = req.body.commitmentLevel || user.commitmentLevel;
-        if (req.body.languages) user.languages = req.body.languages;
-        user.accessibilityPreferences = req.body.accessibilityPreferences || user.accessibilityPreferences;
-        user.learningTraits = req.body.learningTraits || user.learningTraits;
-        user.studyNote = req.body.studyNote !== undefined ? req.body.studyNote : user.studyNote;
+
+        // 5️⃣ Style & Offsets
+        user.sessionsPerWeek = req.body.sessionsPerWeek || user.sessionsPerWeek;
+        user.sessionLength = req.body.sessionLength || user.sessionLength;
+        user.pace = req.body.pace || user.pace;
+        user.canOffer = req.body.canOffer !== undefined ? req.body.canOffer : user.canOffer;
+
+        // Common/Matching
+        user.skills = req.body.skills || user.skills;
+        user.interests = req.body.interests || user.interests;
         if (req.body.lookingForPartner !== undefined) user.lookingForPartner = req.body.lookingForPartner;
 
         if (req.body.pitchQuestions) user.pitchQuestions = req.body.pitchQuestions;

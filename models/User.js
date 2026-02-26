@@ -11,57 +11,38 @@ const userSchema = mongoose.Schema({
     // ===== STUDENT/PARTNER PROFILE FIELDS =====
 
     // 1️⃣ Identity & Academic Context
+    // 1️⃣ Core Identity
     major: { type: String },
     academicLevel: { type: String, enum: ['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Graduated'] },
     university: { type: String },
+    bio: { type: String, maxlength: 200 }, // Renamed from studyNote
 
-    // 2️⃣ Current Academic Context
-    currentCourses: [{ type: String }],
+    // 2️⃣ Partner Needs
+    partnerType: { type: String, enum: ['peer', 'project teammate'] },
+    matchingGoal: { type: String },
+    topics: [{ type: String }],
+    neededFromPartner: { type: String },
 
-    // 3️⃣ Study & Collaboration Intent
-    primaryStudyGoal: {
-        type: String,
-        enum: ['Exam preparation', 'Assignments', 'Concept mastery', 'Catching up', 'Grade improvement', 'Interview preparation', 'Internship preparation', 'Field-specific learning', 'Language learning']
-    },
-    secondaryStudyGoal: {
-        type: String,
-        enum: ['Exam preparation', 'Assignments', 'Concept mastery', 'Catching up', 'Grade improvement', 'Interview preparation', 'Internship preparation', 'Field-specific learning', 'Language learning']
-    },
-    fieldSpecificDetails: { type: String },
+    // 3️⃣ Location & Logistics
+    timezone: { type: String },
+    languages: [{ type: String }],
+    studyMode: { type: String, enum: ['In-person', 'Online', 'Hybrid'] },
+    preferredTools: [{ type: String }],
 
-    // 4️⃣ Study & Partnership Style
-    preferredStudyStyle: {
-        type: String,
-        enum: ['Silent co-study', 'Discussion-based', 'Teaching/explaining', 'Problem-solving focused']
-    },
-    studyPacePreference: {
-        type: String,
-        enum: ['Slow & deep', 'Balanced', 'Fast & exam-oriented']
-    },
-
-    // 5️⃣ Logistics
+    // 4️⃣ Availability & Commitment
     availability: {
         days: [{ type: String }],
         timeRanges: [{ type: String }]
     },
-    studyMode: { type: String, enum: ['In-person', 'Online', 'Hybrid'] },
-    preferredTools: [{ type: String }],
+    commitmentLevel: { type: String, enum: ['Casual', 'Balanced', 'Heavy'] },
 
-    // 6️⃣ Communication & Commitment
-    communicationStyle: { type: String, enum: ['Direct', 'Friendly', 'Structured'] },
-    commitmentLevel: { type: String, enum: ['Casual', 'Weekly sessions', 'Intensive (exam periods)'] },
+    // 5️⃣ Style & Offsets
+    sessionsPerWeek: { type: Number },
+    sessionLength: { type: String },
+    pace: { type: String, enum: ['Slow & deep', 'Balanced', 'Fast'] },
+    canOffer: { type: String },
 
-    // 7️⃣ Language & Accessibility
-    languages: [{ type: String }],
-    accessibilityPreferences: { type: String },
-
-    // 8️⃣ Learning Compatibility 
-    learningTraits: [{ type: String }],
-
-    // 9️⃣ Short Note
-    studyNote: { type: String, maxlength: 200 },
-
-    // Partner Matching
+    // Legacy/Matching
     lookingForPartner: { type: Boolean, default: false },
 
     // ===== COMMON FIELDS =====
