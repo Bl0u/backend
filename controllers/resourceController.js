@@ -56,8 +56,10 @@ const getThreads = async (req, res) => {
         if (tags) {
             const tagsArray = tags.split(',').map(t => t.startsWith('#') ? t : `#${t}`);
             query.tags = { $all: tagsArray };
+            delete query.isCurated; // 1.7 Fix: If filtering by tags, ignore tab constraints
         } else if (tag) {
             query.tags = tag.startsWith('#') ? tag : `#${tag}`;
+            delete query.isCurated; // 1.7 Fix
         }
 
         if (search) {
