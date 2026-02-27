@@ -13,6 +13,7 @@ const {
 
 // All routes require authentication
 router.post('/', protect, createPlan);
+router.get('/:id', protect, getPlan);
 router.put('/:id/version', protect, addVersion);
 router.put('/:id/version/:versionIdx', protect, editVersion);
 router.delete('/:id/version/:versionIdx', protect, deleteVersion);
