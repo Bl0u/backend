@@ -81,7 +81,8 @@ const userSchema = mongoose.Schema({
 
     // ===== V2.0: MONETIZATION FIELDS =====
     stars: { type: Number, default: 0 },
-    purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }]
+    purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
+    pinnedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }]
 }, {
     timestamps: true,
 });

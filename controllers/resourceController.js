@@ -163,7 +163,15 @@ const getThreadDetail = async (req, res) => {
             .populate('author', 'name username avatar')
             .sort({ upvoteCount: -1, createdAt: 1 });
 
-        res.json({ thread, posts, hasAccess }); // Include hasAccess flag for frontend
+        // Check if thread is pinned by the user
+        let isPinned = false;
+        if (req.user) {
+            const User = require('../models/User');
+            const user = await User.findById(req.user._id);
+            isPinned = user?.pinnedThreads?.includes(req.params.id);
+        }
+
+        res.json({ thread, posts, hasAccess, isPinned }); // Include isPinned flag for frontend
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -656,9 +664,102 @@ const purchaseThread = async (req, res) => {
 const getUniqueTags = async (req, res) => {
     try {
         const uniqueTags = await Thread.distinct('tags');
-
-        // Return raw tags, frontend can process
         res.json(uniqueTags);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Toggle pin on a thread
+// @route   PUT /api/resources/thread/:id/pin
+// @access  Private
+const togglePinThread = async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const user = await User.findById(req.user._id);
+        const threadId = req.params.id;
+
+        const isPinned = user.pinnedThreads.includes(threadId);
+
+        if (isPinned) {
+            user.pinnedThreads = user.pinnedThreads.filter(id => id.toString() !== threadId);
+        } else {
+            user.pinnedThreads.push(threadId);
+        }
+
+        await user.save();
+        res.json({ isPinned: !isPinned, pinnedThreads: user.pinnedThreads });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get user activity (Moderate, Paid, Pinned)
+// @route   GET /api/resources/activity
+// @access  Private
+const getUserActivity = async (req, res) => {
+    try {
+        const { type } = req.query;
+        const userId = req.user._id;
+        let query = {};
+
+        if (type === 'moderate') {
+            // Threads where user is a moderator but NOT the author
+            query = {
+                moderators: userId,
+                author: { $ne: userId }
+            };
+        } else if (type === 'paid') {
+            const User = require('../models/User');
+            const user = await User.findById(userId);
+            query = { _id: { $in: user.purchasedThreads || [] } };
+        } else if (type === 'pinned') {
+            const User = require('../models/User');
+            const user = await User.findById(userId);
+            query = { _id: { $in: user.pinnedThreads || [] } };
+        } else {
+            return res.status(400).json({ message: 'Invalid activity type' });
+        }
+
+        // Fetch threads with basic info and post counts
+        const threads = await Thread.aggregate([
+            { $match: query },
+            {
+                $lookup: {
+                    from: 'posts',
+                    localField: '_id',
+                    foreignField: 'thread',
+                    as: 'posts'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'author',
+                    foreignField: '_id',
+                    as: 'author'
+                }
+            },
+            { $unwind: '$author' },
+            {
+                $project: {
+                    title: 1,
+                    description: 1,
+                    tags: 1,
+                    isCurated: 1,
+                    isPaid: 1,
+                    price: 1,
+                    createdAt: 1,
+                    'author.name': 1,
+                    'author.username': 1,
+                    postCount: { $size: '$posts' },
+                    upvoteCount: { $sum: '$posts.upvoteCount' }
+                }
+            },
+            { $sort: { createdAt: -1 } }
+        ]);
+
+        res.json(threads);
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -670,7 +771,7 @@ module.exports = {
     getUniqueTags,
     getThreadDetail,
     updateThread,
-    updateThreadPrice, // V2.0
+    updateThreadPrice,
     deleteThread,
     addModerator,
     removeModerator,
@@ -681,5 +782,7 @@ module.exports = {
     toggleUpvote,
     requestReview,
     updateInstructions,
-    purchaseThread, // V2.0
+    purchaseThread,
+    togglePinThread,
+    getUserActivity,
 };

@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Thread = require('../models/Thread');
+const Post = require('../models/Post');
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
@@ -108,7 +110,24 @@ const getUserById = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
-        res.json(user);
+        // Calculate Statistics
+        const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
+            Thread.countDocuments({ author: req.params.id }),
+            Thread.countDocuments({ author: req.params.id, isCurated: true }),
+            Post.countDocuments({ author: req.params.id })
+        ]);
+
+        const stats = {
+            threadsCreated,
+            guidesCreated,
+            communityThreads: threadsCreated - guidesCreated,
+            commentsMade
+        };
+
+        const userObj = user.toObject();
+        userObj.stats = stats;
+
+        res.json(userObj);
     } else {
         res.status(404).json({ message: 'User not found' });
     }
@@ -123,7 +142,24 @@ const getUserByUsername = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
-        res.json(user);
+        // Calculate Statistics
+        const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
+            Thread.countDocuments({ author: user._id }),
+            Thread.countDocuments({ author: user._id, isCurated: true }),
+            Post.countDocuments({ author: user._id })
+        ]);
+
+        const stats = {
+            threadsCreated,
+            guidesCreated,
+            communityThreads: threadsCreated - guidesCreated,
+            commentsMade
+        };
+
+        const userObj = user.toObject();
+        userObj.stats = stats;
+
+        res.json(userObj);
     } else {
         res.status(404).json({ message: 'User not found' });
     }
