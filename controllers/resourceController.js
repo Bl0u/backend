@@ -204,21 +204,42 @@ const addPost = async (req, res) => {
             parentPost: req.body.parentPost || null
         });
 
-        // Send notification to thread owner for top-level posts and replies
-        if (thread.author.toString() !== req.user._id.toString()) {
-            const Request = require('../models/Request');
-            const User = require('../models/User');
-            const postAuthor = await User.findById(req.user._id);
-            const isReply = !!req.body.parentPost;
+        // Follow-up Logic 1.0: Handle notifications
+        const User = require('../models/User');
+        const Request = require('../models/Request');
+        const postAuthor = await User.findById(req.user._id);
+        const isReply = !!req.body.parentPost;
 
-            await Request.create({
-                sender: req.user._id,
-                receiver: thread.author,
-                type: 'notification',
-                message: `${postAuthor.name} ${isReply ? 'replied to a post' : 'added a new post'} in your thread "${thread.title}"|||THREAD:${threadId}`,
-                status: 'accepted',
-                isPublic: false
-            });
+        if (isReply) {
+            // Logic 2: Notify author of the msg being replied to
+            const parentPost = await Post.findById(req.body.parentPost);
+            if (parentPost && parentPost.author.toString() !== req.user._id.toString()) {
+                await Request.create({
+                    sender: req.user._id,
+                    receiver: parentPost.author,
+                    type: 'notification',
+                    message: `${postAuthor.name} replied to ur msg at thread "${thread.title}"|||THREAD:${threadId}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
+        } else {
+            // Logic 1: Notify users who pinned the thread (for main comments only)
+            const pinnedUsers = await User.find({ pinnedThreads: threadId });
+
+            for (const pinnedUser of pinnedUsers) {
+                // Don't notify the sender
+                if (pinnedUser._id.toString() === req.user._id.toString()) continue;
+
+                await Request.create({
+                    sender: req.user._id,
+                    receiver: pinnedUser._id,
+                    type: 'notification',
+                    message: `${postAuthor.name} posted "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}" in thread "${thread.title}"|||THREAD:${threadId}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
         }
 
         res.status(201).json(post);
