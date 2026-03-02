@@ -32,11 +32,13 @@ const requestRoutes = require('./routes/requestRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const planRoutes = require('./routes/planRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 
 app.use('/api/requests', requestRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/plans', planRoutes);
+app.use('/api/ai', aiRoutes);
 
 // make uploads folder static
 
