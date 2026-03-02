@@ -5,7 +5,7 @@ const User = require('../models/User');
 // @route   POST /api/requests
 // @access  Private
 const sendRequest = async (req, res) => {
-    const { receiverId, type, message, pitch, isPublic } = req.body;
+    const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono } = req.body;
 
     if (!isPublic && req.user.id === receiverId) {
         return res.status(400).json({ message: 'Cannot send request to yourself' });
@@ -43,7 +43,10 @@ const sendRequest = async (req, res) => {
         type: 'partner', // Default to partner
         message,
         pitch,
-        isPublic: !!isPublic
+        isPublic: !!isPublic,
+        teamSize: teamSize || 1,
+        mentorNeeded: !!mentorNeeded,
+        isProBono: !!isProBono
     });
 
     res.status(201).json(request);
@@ -82,8 +85,15 @@ const getSentRequests = async (req, res) => {
 // @access  Public
 const getPublicPitches = async (req, res) => {
     try {
-        const pitches = await Request.find({ isPublic: true, status: 'pending' })
+        const pitches = await Request.find({
+            isPublic: true,
+            $or: [
+                { status: 'pending' },
+                { isProBono: true, status: 'accepted' }
+            ]
+        })
             .populate('sender', 'name username role profilePicture')
+            .populate('contributors', 'name username avatar') // Populate contributors for progress view
             .sort({ createdAt: -1 });
         res.json(pitches);
     } catch (error) {
@@ -97,55 +107,106 @@ const getPublicPitches = async (req, res) => {
 const claimPublicPitch = async (req, res) => {
     const request = await Request.findById(req.params.id);
 
-    if (!request || !request.isPublic || request.status !== 'pending') {
-        return res.status(404).json({ message: 'Public pitch not found or already claimed' });
+    if (!request || !request.isPublic || (request.status !== 'pending' && request.status !== 'accepted')) {
+        return res.status(404).json({ message: 'Public pitch not found or already filled' });
     }
 
+    const { role } = req.body; // 'teammate' or 'mentor'
     const claimingUser = await User.findById(req.user.id);
 
-    request.receiver = req.user.id;
-    request.claimedBy = req.user.id;
-    request.status = 'accepted';
+    // Update Project Status & Contributors
+    if (role === 'mentor') {
+        if (!request.mentorNeeded) {
+            return res.status(400).json({ message: 'A mentor is not requested for this mission' });
+        }
+        if (request.mentor) {
+            return res.status(400).json({ message: 'The mentor spot is already filled' });
+        }
+        request.mentor = req.user.id;
+    } else {
+        // Default to teammate
+        if (request.contributors.includes(req.user.id)) {
+            return res.status(400).json({ message: 'You have already joined this mission' });
+        }
+        if (request.contributors.length >= (request.teamSize || 1)) {
+            return res.status(400).json({ message: 'All teammate slots are already filled' });
+        }
+        request.contributors.push(req.user.id);
+    }
+
+    // Check if mission is fully staffed
+    const isTeamFull = request.contributors.length >= (request.teamSize || 1);
+    const isMentorFull = !request.mentorNeeded || !!request.mentor;
+
+    if (isTeamFull && isMentorFull) {
+        request.status = 'completed'; // Filled -> Remove from Hub
+    } else {
+        request.status = 'accepted'; // Partly Filled -> Keep in Hub
+    }
+
+    // Always ensure one main receiver is set for legacy compatibility
+    if (!request.receiver) {
+        request.receiver = req.user.id;
+        request.claimedBy = req.user.id;
+    }
+
+    // Update progress percentage
+    const totalSlots = (request.teamSize || 1) + (request.mentorNeeded ? 1 : 0);
+    const filledSlots = (request.contributors?.length || 0) + (request.mentor ? 1 : 0);
+    request.progress = Math.min(100, Math.round((filledSlots / totalSlots) * 100));
+
     await request.save();
 
     // Enroll Partners
     const sender = await User.findById(request.sender);
     if (sender) {
-        // Add to both users' enrolledPartners
-        claimingUser.enrolledPartners.push({ user: sender._id, status: 'active' });
-        await claimingUser.save();
+        // Check if already enrolled to prevent double entries
+        const alreadyEnrolled = claimingUser.enrolledPartners.some(p => p.user.toString() === sender._id.toString() && p.status === 'active');
 
-        sender.enrolledPartners.push({ user: claimingUser._id, status: 'active' });
-        await sender.save();
+        if (!alreadyEnrolled) {
+            claimingUser.enrolledPartners.push({ user: sender._id, status: 'active' });
+            await claimingUser.save();
 
-        // Create collaboration plan
+            sender.enrolledPartners.push({ user: claimingUser._id, status: 'active' });
+            await sender.save();
+        }
+
+        // Create collaboration plan (Only on first claim for pro-bono or for every standard claim)
         try {
             const Plan = require('../models/Plan');
-            const defaultContent = `# Collaboration Plan\n\nWelcome to your shared project roadmap.`;
-
-            const newPlan = new Plan({
-                partner1: req.user.id,
-                partner2: sender._id,
-                versions: [{
-                    versionMajor: 0,
-                    versionMinor: 0,
-                    title: 'Initial Collaboration Plan',
-                    content: claimingUser.planTemplate || sender.planTemplate || defaultContent,
-                    authorName: claimingUser.name,
-                    comments: []
-                }]
+            const existingPlan = await Plan.findOne({
+                $or: [
+                    { partner1: req.user.id, partner2: sender._id },
+                    { partner1: sender._id, partner2: req.user.id }
+                ]
             });
-            await newPlan.save();
 
-            // Create notification for sender
-            await Request.create({
-                sender: req.user.id,
-                receiver: sender._id,
-                type: 'notification',
-                message: `COLLABORATION STARTED: ${claimingUser.name} claimed your pitch "${request.pitch?.get('Hook')}". Check your dashboard!|||PLAN:${newPlan._id}`,
-                status: 'accepted',
-                isPublic: false
-            });
+            if (!existingPlan) {
+                const defaultContent = `# Collaboration Plan\n\nWelcome to your shared project roadmap.`;
+                const newPlan = new Plan({
+                    partner1: req.user.id,
+                    partner2: sender._id,
+                    versions: [{
+                        versionMajor: 0,
+                        versionMinor: 0,
+                        title: 'Initial Collaboration Plan',
+                        content: claimingUser.planTemplate || sender.planTemplate || defaultContent,
+                        authorName: claimingUser.name,
+                        comments: []
+                    }]
+                });
+                await newPlan.save();
+
+                // Create notification for sender
+                await Request.create({
+                    sender: req.user.id,
+                    receiver: sender._id,
+                    type: 'notification',
+                    message: `COLLABORATION STARTED: ${claimingUser.name} joined your pitch "${request.pitch?.get('Hook')}".${request.isProBono ? ` Progress: ${request.progress}%` : ''}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
         } catch (error) {
             console.error('Plan creation error in claim:', error);
         }

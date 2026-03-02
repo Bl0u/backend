@@ -18,6 +18,8 @@ const updateUserProfile = async (req, res) => {
         user.academicLevel = req.body.academicLevel || user.academicLevel;
         user.university = req.body.university || user.university;
         user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
+        user.gender = req.body.gender || user.gender;
+        user.isPrivate = req.body.isPrivate !== undefined ? req.body.isPrivate : user.isPrivate;
         user.socialLinks = req.body.socialLinks || user.socialLinks;
 
         // 2️⃣ Partner Needs
@@ -110,6 +112,12 @@ const getUserById = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // Privacy Check
+        const isOwner = req.user && req.user._id.toString() === user._id.toString();
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This profile is private' });
+        }
+
         // Calculate Statistics
         const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
             Thread.countDocuments({ author: req.params.id }),
@@ -142,6 +150,12 @@ const getUserByUsername = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // Privacy Check
+        const isOwner = req.user && req.user._id.toString() === user._id.toString();
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This profile is private' });
+        }
+
         // Calculate Statistics
         const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
             Thread.countDocuments({ author: user._id }),

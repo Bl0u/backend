@@ -7,6 +7,8 @@ const userSchema = mongoose.Schema({
     password: { type: String, required: true },
     role: { type: String, enum: ['student', 'admin'], default: 'student' },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
+    gender: { type: String, enum: ['Male', 'Female'] },
+    isPrivate: { type: Boolean, default: false },
 
     // ===== STUDENT/PARTNER PROFILE FIELDS =====
 

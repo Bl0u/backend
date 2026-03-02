@@ -35,6 +35,30 @@ const requestSchema = mongoose.Schema({
     claimedBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    },
+    teamSize: {
+        type: Number,
+        default: 1
+    },
+    mentorNeeded: {
+        type: Boolean,
+        default: false
+    },
+    progress: {
+        type: Number,
+        default: 0
+    },
+    isProBono: {
+        type: Boolean,
+        default: false
+    },
+    contributors: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    mentor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     }
 }, {
     timestamps: true
