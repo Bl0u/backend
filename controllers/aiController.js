@@ -90,6 +90,15 @@ const interpretAndRecommend = async (req, res) => {
 
     } catch (error) {
         console.error('AI Recommendation Error:', error);
+
+        // Specific handling for leaked/403 keys
+        if (error.status === 403 || error.message?.includes('403')) {
+            return res.status(403).json({
+                message: 'AI Service Authentication Failed (API Key Refused/Leaked)',
+                error: 'Your Google Gemini API key has been reported as leaked or is invalid. Please rotate your API key in the .env file.'
+            });
+        }
+
         res.status(500).json({ message: 'AI interpretation failed', error: error.message });
     }
 };
