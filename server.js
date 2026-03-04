@@ -36,6 +36,7 @@ const aiRoutes = require('./routes/aiRoutes');
 
 const testimonialRoutes = require('./routes/testimonialRoutes');
 const recruitmentRoutes = require('./routes/recruitmentRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 app.use('/api/requests', requestRoutes);
 app.use('/api/reviews', reviewRoutes);
@@ -44,6 +45,7 @@ app.use('/api/plans', planRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/testimonials', testimonialRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // make uploads folder static
 
