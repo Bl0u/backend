@@ -69,8 +69,8 @@ const initiatePayment = async (req, res) => {
             currency: 'EGP',
             integration_id: parseInt(process.env.PAYMOB_WALLET_INTEGRATION_ID),
             billing_data: {
-                first_name: user.name.split(' ')[0] || 'N/A',
-                last_name: user.name.split(' ').slice(1).join(' ') || 'N/A',
+                first_name: user.username,
+                last_name: user.name || user.username,
                 email: user.email,
                 phone_number: walletPhone,
                 apartment: 'N/A',
@@ -133,6 +133,9 @@ const handleCallback = async (req, res) => {
     try {
         const callback = req.body;
         const hmacHeader = req.query.hmac;
+
+        console.log('📨 Paymob callback received:', JSON.stringify(callback, null, 2));
+        console.log('🔐 HMAC from query:', hmacHeader);
 
         // ── HMAC Verification ──
         const obj = callback.obj;
