@@ -59,6 +59,7 @@ const getReceivedRequests = async (req, res) => {
     try {
         const requests = await Request.find({ receiver: req.user.id })
             .populate('sender', 'name username role profilePicture')
+            .populate('pitchRef')
             .sort({ createdAt: -1 });
         res.json(requests);
     } catch (error) {
@@ -114,6 +115,43 @@ const claimPublicPitch = async (req, res) => {
     const { role } = req.body; // 'teammate' or 'mentor'
     const claimingUser = await User.findById(req.user.id);
 
+    // CHANGE: If Pro-Bono, send a request instead of immediate join
+    if (request.isProBono) {
+        const existingClaim = await Request.findOne({
+            sender: req.user.id,
+            pitchRef: request._id,
+            type: 'pitch_claim',
+            status: 'pending'
+        });
+
+        if (existingClaim) {
+            return res.status(400).json({ message: 'You already have a pending join request for this mission' });
+        }
+
+        const claimRequest = await Request.create({
+            sender: req.user.id,
+            receiver: request.sender,
+            type: 'pitch_claim',
+            pitchRef: request._id,
+            claimRole: role || 'teammate',
+            status: 'pending',
+            message: `Wants to join as ${role || 'teammate'}`
+        });
+
+        return res.json({
+            message: 'Join request sent to project owner for approval',
+            request: claimRequest,
+            isPendingApproval: true
+        });
+    }
+
+    // For standard pitches, use the internal handler for immediate join
+    return handlePitchEnrollment(request, claimingUser, role || 'teammate', res);
+};
+
+// Internal Helper: Handles the actual logic of adding a user to a pitch
+// Reused by claimPublicPitch (Standard) and approvePitchClaim (Pro-Bono)
+const handlePitchEnrollment = async (request, user, role, res) => {
     // Update Project Status & Contributors
     if (role === 'mentor') {
         if (!request.mentorNeeded) {
@@ -122,16 +160,16 @@ const claimPublicPitch = async (req, res) => {
         if (request.mentor) {
             return res.status(400).json({ message: 'The mentor spot is already filled' });
         }
-        request.mentor = req.user.id;
+        request.mentor = user._id;
     } else {
         // Default to teammate
-        if (request.contributors.includes(req.user.id)) {
-            return res.status(400).json({ message: 'You have already joined this mission' });
+        if (request.contributors.includes(user._id)) {
+            return res.status(400).json({ message: 'User has already joined this mission' });
         }
         if (request.contributors.length >= (request.teamSize || 1)) {
             return res.status(400).json({ message: 'All teammate slots are already filled' });
         }
-        request.contributors.push(req.user.id);
+        request.contributors.push(user._id);
     }
 
     // Check if mission is fully staffed
@@ -146,8 +184,8 @@ const claimPublicPitch = async (req, res) => {
 
     // Always ensure one main receiver is set for legacy compatibility
     if (!request.receiver) {
-        request.receiver = req.user.id;
-        request.claimedBy = req.user.id;
+        request.receiver = user._id;
+        request.claimedBy = user._id;
     }
 
     // Update progress percentage
@@ -161,48 +199,48 @@ const claimPublicPitch = async (req, res) => {
     const sender = await User.findById(request.sender);
     if (sender) {
         // Check if already enrolled to prevent double entries
-        const alreadyEnrolled = claimingUser.enrolledPartners.some(p => p.user.toString() === sender._id.toString() && p.status === 'active');
+        const alreadyEnrolled = user.enrolledPartners.some(p => p.user.toString() === sender._id.toString() && p.status === 'active');
 
         if (!alreadyEnrolled) {
-            claimingUser.enrolledPartners.push({ user: sender._id, status: 'active' });
-            await claimingUser.save();
+            user.enrolledPartners.push({ user: sender._id, status: 'active' });
+            await user.save();
 
-            sender.enrolledPartners.push({ user: claimingUser._id, status: 'active' });
+            sender.enrolledPartners.push({ user: user._id, status: 'active' });
             await sender.save();
         }
 
-        // Create collaboration plan (Only on first claim for pro-bono or for every standard claim)
+        // Create collaboration plan
         try {
             const Plan = require('../models/Plan');
             const existingPlan = await Plan.findOne({
                 $or: [
-                    { partner1: req.user.id, partner2: sender._id },
-                    { partner1: sender._id, partner2: req.user.id }
+                    { partner1: user._id, partner2: sender._id },
+                    { partner1: sender._id, partner2: user._id }
                 ]
             });
 
             if (!existingPlan) {
                 const defaultContent = `# Collaboration Plan\n\nWelcome to your shared project roadmap.`;
                 const newPlan = new Plan({
-                    partner1: req.user.id,
+                    partner1: user._id,
                     partner2: sender._id,
                     versions: [{
                         versionMajor: 0,
                         versionMinor: 0,
                         title: 'Initial Collaboration Plan',
-                        content: claimingUser.planTemplate || sender.planTemplate || defaultContent,
-                        authorName: claimingUser.name,
+                        content: user.planTemplate || sender.planTemplate || defaultContent,
+                        authorName: user.name,
                         comments: []
                     }]
                 });
                 await newPlan.save();
 
-                // Create notification for sender
+                // Create notification for sender/owner
                 await Request.create({
-                    sender: req.user.id,
+                    sender: user._id,
                     receiver: sender._id,
                     type: 'notification',
-                    message: `COLLABORATION STARTED: ${claimingUser.name} joined your pitch "${request.pitch?.get('Hook')}".${request.isProBono ? ` Progress: ${request.progress}%` : ''}`,
+                    message: `MISSION STARTED: ${user.name} joined your pitch "${request.pitch?.get('Hook')}".${request.isProBono ? ` Progress: ${request.progress}%` : ''}`,
                     status: 'accepted',
                     isPublic: false
                 });
@@ -212,7 +250,70 @@ const claimPublicPitch = async (req, res) => {
         }
     }
 
-    res.json({ message: 'Pitch claimed successfully', request });
+    return res.json({ message: 'Pitch joined successfully', request });
+};
+
+// @desc    Approve a join request for a pro-bono pitch
+// @route   PUT /api/requests/:id/approve-claim
+// @access  Private
+const approvePitchClaim = async (req, res) => {
+    const claimRequest = await Request.findById(req.params.id);
+
+    if (!claimRequest || claimRequest.type !== 'pitch_claim' || claimRequest.status !== 'pending') {
+        return res.status(404).json({ message: 'Pending claim request not found' });
+    }
+
+    // Only the pitch owner (receiver of the claim) can approve
+    if (claimRequest.receiver.toString() !== req.user.id) {
+        return res.status(401).json({ message: 'Not authorized to approve this request' });
+    }
+
+    const pitch = await Request.findById(claimRequest.pitchRef);
+    if (!pitch) {
+        return res.status(404).json({ message: 'Mission pitch no longer exists' });
+    }
+
+    const claimingUser = await User.findById(claimRequest.sender);
+    if (!claimingUser) {
+        return res.status(404).json({ message: 'User no longer exists' });
+    }
+
+    // Mark claim as accepted
+    claimRequest.status = 'accepted';
+    await claimRequest.save();
+
+    // Use common handler to enroll the user
+    return handlePitchEnrollment(pitch, claimingUser, claimRequest.claimRole, res);
+};
+
+// @desc    Reject a join request for a pro-bono pitch
+// @route   PUT /api/requests/:id/reject-claim
+// @access  Private
+const rejectPitchClaim = async (req, res) => {
+    const claimRequest = await Request.findById(req.params.id);
+
+    if (!claimRequest || claimRequest.type !== 'pitch_claim' || claimRequest.status !== 'pending') {
+        return res.status(404).json({ message: 'Pending claim request not found' });
+    }
+
+    if (claimRequest.receiver.toString() !== req.user.id) {
+        return res.status(401).json({ message: 'Not authorized to reject this request' });
+    }
+
+    claimRequest.status = 'rejected';
+    await claimRequest.save();
+
+    // Notify the sender
+    await Request.create({
+        sender: req.user.id,
+        receiver: claimRequest.sender,
+        type: 'notification',
+        message: `Your request to join the mission has been declined.`,
+        status: 'rejected',
+        isPublic: false
+    });
+
+    res.json({ message: 'Join request declined' });
 };
 
 // @desc    Respond to private request
@@ -471,6 +572,8 @@ module.exports = {
     getSentRequests,
     getPublicPitches,
     claimPublicPitch,
+    approvePitchClaim,
+    rejectPitchClaim,
     respondToRequest,
     markAsRead,
     checkConnection,

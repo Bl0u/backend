@@ -74,7 +74,17 @@ const updateUserProfile = async (req, res) => {
 // @route   GET /api/users
 // @access  Public
 const getUsers = async (req, res) => {
-    const { role, lookingForPartner, search } = req.query;
+    const {
+        role,
+        lookingForPartner,
+        search,
+        university,
+        major,
+        academicLevel,
+        city,
+        country
+    } = req.query;
+
     let query = {};
 
     if (role) {
@@ -85,22 +95,68 @@ const getUsers = async (req, res) => {
         query.lookingForPartner = true;
     }
 
+    // Advanced Filters
+    if (university) query.university = { $regex: university, $options: 'i' };
+    if (major) query.major = { $regex: major, $options: 'i' };
+    if (academicLevel) query.academicLevel = academicLevel;
+    if (city) query.city = { $regex: city, $options: 'i' };
+    if (country) query.country = { $regex: country, $options: 'i' };
+
     // Search by multiple fields (case-insensitive)
     if (search) {
         query.$or = [
-            { username: { $regex: search, $options: 'i' } },
             { name: { $regex: search, $options: 'i' } },
-            { university: { $regex: search, $options: 'i' } },
-            { major: { $regex: search, $options: 'i' } },
+            { username: { $regex: search, $options: 'i' } },
             { skills: { $regex: search, $options: 'i' } },
-            { interests: { $regex: search, $options: 'i' } }
+            { major: { $regex: search, $options: 'i' } },
+            { university: { $regex: search, $options: 'i' } }
         ];
         // If searching, ignore lookingFor filters to find specific users
         delete query.lookingForPartner;
     }
 
+    // EXCLUDE BLOCKED USERS: Don't show users searcher has blocked
+    if (req.user) {
+        const currentUser = await User.findById(req.user.id);
+        if (currentUser && currentUser.blockedUsers?.length > 0) {
+            query._id = { ...query._id, $nin: currentUser.blockedUsers };
+        }
+    }
+
     const users = await User.find(query).select('-password');
     res.json(users);
+};
+
+// @desc    Block a user
+// @route   POST /api/users/block/:id
+// @access  Private
+const blockUser = async (req, res) => {
+    const userToBlock = await User.findById(req.params.id);
+    if (!userToBlock) return res.status(404).json({ message: 'User not found' });
+
+    if (req.user.id === req.params.id) {
+        return res.status(400).json({ message: 'You cannot block yourself' });
+    }
+
+    const currentUser = await User.findById(req.user.id);
+    if (currentUser.blockedUsers.includes(req.params.id)) {
+        return res.status(400).json({ message: 'User already blocked' });
+    }
+
+    currentUser.blockedUsers.push(req.params.id);
+    await currentUser.save();
+
+    res.json({ message: 'User blocked successfully' });
+};
+
+// @desc    Unblock a user
+// @route   DELETE /api/users/block/:id
+// @access  Private
+const unblockUser = async (req, res) => {
+    const currentUser = await User.findById(req.user.id);
+    currentUser.blockedUsers = currentUser.blockedUsers.filter(id => id.toString() !== req.params.id);
+    await currentUser.save();
+    res.json({ message: 'User unblocked successfully' });
 };
 
 // @desc    Get user by ID
@@ -215,4 +271,6 @@ module.exports = {
     getUserById,
     getUserByUsername,
     topUpStars,
+    blockUser,
+    unblockUser,
 };

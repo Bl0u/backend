@@ -26,6 +26,8 @@ const userSchema = mongoose.Schema({
     neededFromPartner: { type: String },
 
     // 3️⃣ Location & Logistics
+    city: { type: String },
+    country: { type: String },
     timezone: { type: String },
     languages: [{ type: String }],
     studyMode: { type: String, enum: ['In-person', 'Online', 'Hybrid'] },
@@ -84,7 +86,8 @@ const userSchema = mongoose.Schema({
     // ===== V2.0: MONETIZATION FIELDS =====
     stars: { type: Number, default: 0 },
     purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
-    pinnedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }]
+    pinnedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
     timestamps: true,
 });

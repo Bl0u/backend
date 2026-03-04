@@ -9,6 +9,8 @@ const {
     markAsRead,
     checkConnection,
     endRelationship,
+    approvePitchClaim,
+    rejectPitchClaim,
     updateRelationshipNote,
     getSentRequests,
     cancelRequest
@@ -22,6 +24,8 @@ router.get('/public', getPublicPitches); // Publicly viewable Hub
 router.put('/relationship/end', protect, endRelationship);
 router.put('/history/note', protect, updateRelationshipNote);
 router.put('/:id/claim', protect, claimPublicPitch);
+router.put('/:id/approve-claim', protect, approvePitchClaim);
+router.put('/:id/reject-claim', protect, rejectPitchClaim);
 router.put('/:id/respond', protect, respondToRequest);
 router.delete('/:id/read', protect, markAsRead);
 router.delete('/:id', protect, cancelRequest);

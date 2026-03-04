@@ -13,13 +13,21 @@ const requestSchema = mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['mentorship', 'partner', 'review_alert', 'notification'],
+        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim'],
         required: true
     },
     status: {
         type: String,
         enum: ['pending', 'accepted', 'rejected', 'completed'],
         default: 'pending'
+    },
+    pitchRef: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Request'
+    },
+    claimRole: {
+        type: String,
+        enum: ['teammate', 'mentor']
     },
     message: {
         type: String
