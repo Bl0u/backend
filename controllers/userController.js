@@ -265,6 +265,32 @@ const topUpStars = async (req, res) => {
     }
 };
 
+// @desc    Get unique values for partner filters (dynamic dropdowns)
+// @route   GET /api/users/filters
+// @access  Public
+const getUniquePartnerFilters = async (req, res) => {
+    try {
+        const query = { lookingForPartner: true };
+
+        const [universities, majors, cities, countries] = await Promise.all([
+            User.distinct('university', query),
+            User.distinct('major', query),
+            User.distinct('city', query),
+            User.distinct('country', query)
+        ]);
+
+        res.json({
+            University: universities.filter(Boolean),
+            Major: majors.filter(Boolean),
+            City: cities.filter(Boolean),
+            Country: countries.filter(Boolean)
+        });
+    } catch (error) {
+        console.error('Error fetching partner filters:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     updateUserProfile,
     getUsers,
@@ -273,4 +299,5 @@ module.exports = {
     topUpStars,
     blockUser,
     unblockUser,
+    getUniquePartnerFilters
 };
