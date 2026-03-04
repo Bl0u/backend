@@ -88,10 +88,7 @@ const getPublicPitches = async (req, res) => {
     try {
         const pitches = await Request.find({
             isPublic: true,
-            $or: [
-                { status: 'pending' },
-                { isProBono: true, status: 'accepted' }
-            ]
+            status: { $in: ['pending', 'accepted'] }
         })
             .populate('sender', 'name username role profilePicture')
             .populate('contributors', 'name username avatar') // Populate contributors for progress view
@@ -115,38 +112,33 @@ const claimPublicPitch = async (req, res) => {
     const { role } = req.body; // 'teammate' or 'mentor'
     const claimingUser = await User.findById(req.user.id);
 
-    // CHANGE: If Pro-Bono, send a request instead of immediate join
-    if (request.isProBono) {
-        const existingClaim = await Request.findOne({
-            sender: req.user.id,
-            pitchRef: request._id,
-            type: 'pitch_claim',
-            status: 'pending'
-        });
+    // UNIFIED: All joins now require approval
+    const existingClaim = await Request.findOne({
+        sender: req.user.id,
+        pitchRef: request._id,
+        type: 'pitch_claim',
+        status: 'pending'
+    });
 
-        if (existingClaim) {
-            return res.status(400).json({ message: 'You already have a pending join request for this mission' });
-        }
-
-        const claimRequest = await Request.create({
-            sender: req.user.id,
-            receiver: request.sender,
-            type: 'pitch_claim',
-            pitchRef: request._id,
-            claimRole: role || 'teammate',
-            status: 'pending',
-            message: `Wants to join as ${role || 'teammate'}`
-        });
-
-        return res.json({
-            message: 'Join request sent to project owner for approval',
-            request: claimRequest,
-            isPendingApproval: true
-        });
+    if (existingClaim) {
+        return res.status(400).json({ message: 'You already have a pending join request for this mission' });
     }
 
-    // For standard pitches, use the internal handler for immediate join
-    return handlePitchEnrollment(request, claimingUser, role || 'teammate', res);
+    const claimRequest = await Request.create({
+        sender: req.user.id,
+        receiver: request.sender,
+        type: 'pitch_claim',
+        pitchRef: request._id,
+        claimRole: role || 'teammate',
+        status: 'pending',
+        message: `Wants to join as ${role || 'teammate'}`
+    });
+
+    return res.json({
+        message: 'Join request sent to project owner for approval',
+        request: claimRequest,
+        isPendingApproval: true
+    });
 };
 
 // Internal Helper: Handles the actual logic of adding a user to a pitch
@@ -179,7 +171,7 @@ const handlePitchEnrollment = async (request, user, role, res) => {
     if (isTeamFull && isMentorFull) {
         request.status = 'completed'; // Filled -> Remove from Hub
     } else {
-        request.status = 'accepted'; // Partly Filled -> Keep in Hub
+        request.status = 'accepted'; // Partly Filled -> Keep in Hub for both types
     }
 
     // Always ensure one main receiver is set for legacy compatibility
@@ -235,12 +227,25 @@ const handlePitchEnrollment = async (request, user, role, res) => {
                 });
                 await newPlan.save();
 
-                // Create notification for sender/owner
+                // FIX: Extract pitch title correctly and notify JOINER
+                const pitchTitle = request.pitch?.get('Hook') || request.pitch?.get('The Hook (Short summary)') || "New Project";
+
                 await Request.create({
-                    sender: user._id,
-                    receiver: sender._id,
+                    sender: sender._id,
+                    receiver: user._id,
                     type: 'notification',
-                    message: `MISSION STARTED: ${user.name} joined your pitch "${request.pitch?.get('Hook')}".${request.isProBono ? ` Progress: ${request.progress}%` : ''}`,
+                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Collaborative plan created.|||PLAN:${newPlan._id}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            } else {
+                // If plan exists, still notify joiner
+                const pitchTitle = request.pitch?.get('Hook') || request.pitch?.get('The Hook (Short summary)') || "New Project";
+                await Request.create({
+                    sender: sender._id,
+                    receiver: user._id,
+                    type: 'notification',
+                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Check your shared plan.|||PLAN:${existingPlan._id}`,
                     status: 'accepted',
                     isPublic: false
                 });
