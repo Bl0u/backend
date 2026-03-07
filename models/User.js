@@ -87,7 +87,8 @@ const userSchema = mongoose.Schema({
     stars: { type: Number, default: 0 },
     purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
     pinnedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
-    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    isBanned: { type: Boolean, default: false }
 }, {
     timestamps: true,
 });

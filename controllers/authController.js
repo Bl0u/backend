@@ -93,6 +93,11 @@ const loginUser = async (req, res) => {
     });
 
     if (user && (await bcrypt.compare(password, user.password))) {
+        // Block banned users from logging in
+        if (user.isBanned) {
+            return res.status(403).json({ message: 'Your account has been banned. Contact support for more information.' });
+        }
+
         res.json({
             _id: user.id,
             name: user.name,
