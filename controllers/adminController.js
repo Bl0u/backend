@@ -118,6 +118,56 @@ const getUsers = async (req, res) => {
     }
 };
 
+// @desc    Promote user to new role
+// @route   PUT /api/admin/users/:id/promote
+// @access  Admin
+const promoteUser = async (req, res) => {
+    try {
+        const { role, university, college, academicLevel } = req.body;
+        const validRoles = ['student', 'admin', 'mentor', 'studentLead'];
+
+        if (!validRoles.includes(role)) {
+            return res.status(400).json({ message: 'Invalid role' });
+        }
+
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Safety: Prevent self-demotion from admin
+        if (user._id.toString() === req.user._id.toString() && role !== 'admin') {
+            return res.status(403).json({ message: 'You cannot demote yourself from admin role' });
+        }
+
+        user.role = role;
+
+        // Targeted fields for studentLead/mentor
+        if (role === 'studentLead') {
+            if (university) user.university = university;
+            if (college) user.college = college;
+            if (academicLevel) user.academicLevel = academicLevel;
+        }
+
+        await user.save();
+
+        res.json({
+            message: `User promoted to ${role} successfully`,
+            user: {
+                _id: user._id,
+                name: user.name,
+                role: user.role,
+                university: user.university,
+                college: user.college,
+                academicLevel: user.academicLevel
+            }
+        });
+    } catch (error) {
+        console.error('Admin promoteUser error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // @desc    Get single user details with all related data
 // @route   GET /api/admin/users/:id
 // @access  Admin
@@ -584,5 +634,6 @@ module.exports = {
     getPayments,
     getRecruitment,
     updateRecruitment,
-    resetDatabase
+    resetDatabase,
+    promoteUser
 };

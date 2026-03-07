@@ -15,7 +15,8 @@ const {
     getPayments,
     getRecruitment,
     updateRecruitment,
-    resetDatabase
+    resetDatabase,
+    promoteUser
 } = require('../controllers/adminController');
 
 // All routes require protect + adminOnly
@@ -30,6 +31,7 @@ router.get('/users/:id', getUserDetails);
 router.delete('/users/:id', deleteUser);
 router.put('/users/:id/ban', toggleBan);
 router.put('/users/:id/stars', adjustStars);
+router.put('/users/:id/promote', promoteUser);
 
 // Threads
 router.get('/threads', getThreads);

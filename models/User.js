@@ -5,7 +5,7 @@ const userSchema = mongoose.Schema({
     username: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['student', 'admin'], default: 'student' },
+    role: { type: String, enum: ['student', 'admin', 'mentor', 'studentLead'], default: 'student' },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
     gender: { type: String, enum: ['Male', 'Female'] },
     isPrivate: { type: Boolean, default: false },
@@ -17,6 +17,7 @@ const userSchema = mongoose.Schema({
     major: { type: String },
     academicLevel: { type: String, enum: ['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Graduated'] },
     university: { type: String },
+    college: { type: String },
     bio: { type: String, maxlength: 200 }, // Renamed from studyNote
 
     // 2️⃣ Partner Needs
