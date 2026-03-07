@@ -499,6 +499,77 @@ const updateRecruitment = async (req, res) => {
     }
 };
 
+// ==============================
+// DATABASE RESET
+// ==============================
+
+// @desc    Wipe entire database except admin accounts
+// @route   DELETE /api/admin/reset
+// @access  Admin
+const resetDatabase = async (req, res) => {
+    try {
+        const { confirmation } = req.body;
+
+        // Require explicit confirmation string to prevent accidental wipes
+        if (confirmation !== 'RESET_EVERYTHING') {
+            return res.status(400).json({ message: 'Confirmation string required: "RESET_EVERYTHING"' });
+        }
+
+        // Import remaining models for full wipe
+        const Testimonial = require('../models/Testimonial');
+        const ReviewRequest = require('../models/ReviewRequest');
+
+        // Delete everything except admin users
+        const results = await Promise.all([
+            User.deleteMany({ role: { $ne: 'admin' } }),
+            Thread.deleteMany({}),
+            Post.deleteMany({}),
+            Message.deleteMany({}),
+            Report.deleteMany({}),
+            Payment.deleteMany({}),
+            Request.deleteMany({}),
+            Review.deleteMany({}),
+            Recruitment.deleteMany({}),
+            Plan.deleteMany({}),
+            Testimonial.deleteMany({}),
+            ReviewRequest.deleteMany({})
+        ]);
+
+        const labels = [
+            'Users (non-admin)', 'Threads', 'Posts', 'Messages',
+            'Reports', 'Payments', 'Requests', 'Reviews',
+            'Recruitment', 'Plans', 'Testimonials', 'ReviewRequests'
+        ];
+
+        const summary = labels.map((label, i) => ({
+            collection: label,
+            deleted: results[i].deletedCount
+        }));
+
+        // Reset admin stars to default
+        await User.updateMany({ role: 'admin' }, {
+            $set: {
+                purchasedThreads: [],
+                pinnedThreads: [],
+                blockedUsers: [],
+                enrolledPartners: [],
+                activePlans: [],
+                partnerHistory: []
+            }
+        });
+
+        console.log('🔴 DATABASE RESET by admin:', req.user.username);
+
+        res.json({
+            message: 'Database has been reset. All data wiped except admin accounts.',
+            summary
+        });
+    } catch (error) {
+        console.error('Admin resetDatabase error:', error);
+        res.status(500).json({ message: 'Server error during reset' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -512,5 +583,6 @@ module.exports = {
     updateReport,
     getPayments,
     getRecruitment,
-    updateRecruitment
+    updateRecruitment,
+    resetDatabase
 };

@@ -14,7 +14,8 @@ const {
     updateReport,
     getPayments,
     getRecruitment,
-    updateRecruitment
+    updateRecruitment,
+    resetDatabase
 } = require('../controllers/adminController');
 
 // All routes require protect + adminOnly
@@ -44,5 +45,8 @@ router.get('/payments', getPayments);
 // Recruitment
 router.get('/recruitment', getRecruitment);
 router.put('/recruitment/:id', updateRecruitment);
+
+// Database Reset (DANGER)
+router.delete('/reset', resetDatabase);
 
 module.exports = router;
