@@ -13,13 +13,15 @@ const {
     rejectPitchClaim,
     updateRelationshipNote,
     getSentRequests,
-    cancelRequest
+    cancelRequest,
+    getMyProjects
 } = require('../controllers/requestController');
 const { protect } = require('../middleware/authMiddleware');
 
 router.post('/', protect, sendRequest);
 router.get('/received', protect, getReceivedRequests);
 router.get('/sent', protect, getSentRequests);
+router.get('/my-projects', protect, getMyProjects);
 router.get('/public', getPublicPitches); // Publicly viewable Hub
 router.put('/relationship/end', protect, endRelationship);
 router.put('/history/note', protect, updateRelationshipNote);

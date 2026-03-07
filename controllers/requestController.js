@@ -571,6 +571,31 @@ const checkConnection = async (req, res) => {
     }
 };
 
+// @desc    Get user's active/completed projects (from pitches)
+// @route   GET /api/requests/my-projects
+// @access  Private
+const getMyProjects = async (req, res) => {
+    try {
+        const projects = await Request.find({
+            isPublic: true,
+            $or: [
+                { sender: req.user.id },
+                { contributors: req.user.id },
+                { mentor: req.user.id }
+            ]
+        })
+            .populate('sender', 'name username role profilePicture')
+            .populate('contributors', 'name username avatar')
+            .populate('mentor', 'name username avatar')
+            .sort({ updatedAt: -1 });
+
+        res.json(projects);
+    } catch (error) {
+        console.error('Error fetching projects:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 module.exports = {
     sendRequest,
     getReceivedRequests,
@@ -584,5 +609,6 @@ module.exports = {
     checkConnection,
     endRelationship,
     cancelRequest,
-    updateRelationshipNote
+    updateRelationshipNote,
+    getMyProjects
 };
