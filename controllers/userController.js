@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const Thread = require('../models/Thread');
+const Post = require('../models/Post');
 
 // @desc    Update user profile
 // @route   PUT /api/users/profile
@@ -8,32 +10,48 @@ const updateUserProfile = async (req, res) => {
 
     if (user) {
         // Basic Info
+        // ===== STUDENT PROFILE 1.2 (LEAN) =====
+        // 1️⃣ Core Identity
         user.name = req.body.name || user.name;
-        user.email = req.body.email || user.email;
         user.username = req.body.username || user.username;
-        user.socialLinks = req.body.socialLinks || user.socialLinks;
-        user.skills = req.body.skills || user.skills;
-        user.interests = req.body.interests || user.interests;
-
-        // ===== STUDENT PROFILE FIELDS =====
         user.major = req.body.major || user.major;
         user.academicLevel = req.body.academicLevel || user.academicLevel;
         user.university = req.body.university || user.university;
-        if (req.body.currentCourses) user.currentCourses = req.body.currentCourses;
-        user.primaryStudyGoal = req.body.primaryStudyGoal || user.primaryStudyGoal;
-        user.secondaryStudyGoal = req.body.secondaryStudyGoal || user.secondaryStudyGoal;
-        user.fieldSpecificDetails = req.body.fieldSpecificDetails !== undefined ? req.body.fieldSpecificDetails : user.fieldSpecificDetails;
-        user.preferredStudyStyle = req.body.preferredStudyStyle || user.preferredStudyStyle;
-        user.studyPacePreference = req.body.studyPacePreference || user.studyPacePreference;
-        if (req.body.availability) user.availability = req.body.availability;
+        user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
+        user.gender = req.body.gender || user.gender;
+        user.isPrivate = req.body.isPrivate !== undefined ? req.body.isPrivate : user.isPrivate;
+        user.socialLinks = req.body.socialLinks || user.socialLinks;
+
+        // 2️⃣ Partner Needs
+        user.partnerType = req.body.partnerType || user.partnerType;
+        user.matchingGoal = req.body.matchingGoal || user.matchingGoal;
+        if (req.body.topics) user.topics = req.body.topics;
+        user.neededFromPartner = req.body.neededFromPartner !== undefined ? req.body.neededFromPartner : user.neededFromPartner;
+
+        // 3️⃣ Location & Logistics
+        user.timezone = req.body.timezone || user.timezone;
+        if (req.body.languages) user.languages = req.body.languages;
         user.studyMode = req.body.studyMode || user.studyMode;
         if (req.body.preferredTools) user.preferredTools = req.body.preferredTools;
-        user.communicationStyle = req.body.communicationStyle || user.communicationStyle;
+
+        // 4️⃣ Availability & Commitment
+        if (req.body.availability) {
+            user.availability = {
+                days: req.body.availability.days || user.availability.days,
+                timeRanges: req.body.availability.timeRanges || user.availability.timeRanges
+            };
+        }
         user.commitmentLevel = req.body.commitmentLevel || user.commitmentLevel;
-        if (req.body.languages) user.languages = req.body.languages;
-        user.accessibilityPreferences = req.body.accessibilityPreferences || user.accessibilityPreferences;
-        user.learningTraits = req.body.learningTraits || user.learningTraits;
-        user.studyNote = req.body.studyNote !== undefined ? req.body.studyNote : user.studyNote;
+
+        // 5️⃣ Style & Offsets
+        user.sessionsPerWeek = req.body.sessionsPerWeek || user.sessionsPerWeek;
+        user.sessionLength = req.body.sessionLength || user.sessionLength;
+        user.pace = req.body.pace || user.pace;
+        user.canOffer = req.body.canOffer !== undefined ? req.body.canOffer : user.canOffer;
+
+        // Common/Matching
+        user.skills = req.body.skills || user.skills;
+        user.interests = req.body.interests || user.interests;
         if (req.body.lookingForPartner !== undefined) user.lookingForPartner = req.body.lookingForPartner;
 
         if (req.body.pitchQuestions) user.pitchQuestions = req.body.pitchQuestions;
@@ -56,7 +74,17 @@ const updateUserProfile = async (req, res) => {
 // @route   GET /api/users
 // @access  Public
 const getUsers = async (req, res) => {
-    const { role, lookingForPartner, search } = req.query;
+    const {
+        role,
+        lookingForPartner,
+        search,
+        university,
+        major,
+        academicLevel,
+        city,
+        country
+    } = req.query;
+
     let query = {};
 
     if (role) {
@@ -67,22 +95,68 @@ const getUsers = async (req, res) => {
         query.lookingForPartner = true;
     }
 
+    // Advanced Filters
+    if (university) query.university = { $regex: university, $options: 'i' };
+    if (major) query.major = { $regex: major, $options: 'i' };
+    if (academicLevel) query.academicLevel = academicLevel;
+    if (city) query.city = { $regex: city, $options: 'i' };
+    if (country) query.country = { $regex: country, $options: 'i' };
+
     // Search by multiple fields (case-insensitive)
     if (search) {
         query.$or = [
-            { username: { $regex: search, $options: 'i' } },
             { name: { $regex: search, $options: 'i' } },
-            { university: { $regex: search, $options: 'i' } },
-            { major: { $regex: search, $options: 'i' } },
+            { username: { $regex: search, $options: 'i' } },
             { skills: { $regex: search, $options: 'i' } },
-            { interests: { $regex: search, $options: 'i' } }
+            { major: { $regex: search, $options: 'i' } },
+            { university: { $regex: search, $options: 'i' } }
         ];
         // If searching, ignore lookingFor filters to find specific users
         delete query.lookingForPartner;
     }
 
+    // EXCLUDE BLOCKED USERS: Don't show users searcher has blocked
+    if (req.user) {
+        const currentUser = await User.findById(req.user.id);
+        if (currentUser && currentUser.blockedUsers?.length > 0) {
+            query._id = { ...query._id, $nin: currentUser.blockedUsers };
+        }
+    }
+
     const users = await User.find(query).select('-password');
     res.json(users);
+};
+
+// @desc    Block a user
+// @route   POST /api/users/block/:id
+// @access  Private
+const blockUser = async (req, res) => {
+    const userToBlock = await User.findById(req.params.id);
+    if (!userToBlock) return res.status(404).json({ message: 'User not found' });
+
+    if (req.user.id === req.params.id) {
+        return res.status(400).json({ message: 'You cannot block yourself' });
+    }
+
+    const currentUser = await User.findById(req.user.id);
+    if (currentUser.blockedUsers.includes(req.params.id)) {
+        return res.status(400).json({ message: 'User already blocked' });
+    }
+
+    currentUser.blockedUsers.push(req.params.id);
+    await currentUser.save();
+
+    res.json({ message: 'User blocked successfully' });
+};
+
+// @desc    Unblock a user
+// @route   DELETE /api/users/block/:id
+// @access  Private
+const unblockUser = async (req, res) => {
+    const currentUser = await User.findById(req.user.id);
+    currentUser.blockedUsers = currentUser.blockedUsers.filter(id => id.toString() !== req.params.id);
+    await currentUser.save();
+    res.json({ message: 'User unblocked successfully' });
 };
 
 // @desc    Get user by ID
@@ -94,7 +168,30 @@ const getUserById = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
-        res.json(user);
+        // Privacy Check
+        const isOwner = req.user && req.user._id.toString() === user._id.toString();
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This profile is private' });
+        }
+
+        // Calculate Statistics
+        const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
+            Thread.countDocuments({ author: req.params.id }),
+            Thread.countDocuments({ author: req.params.id, isCurated: true }),
+            Post.countDocuments({ author: req.params.id })
+        ]);
+
+        const stats = {
+            threadsCreated,
+            guidesCreated,
+            communityThreads: threadsCreated - guidesCreated,
+            commentsMade
+        };
+
+        const userObj = user.toObject();
+        userObj.stats = stats;
+
+        res.json(userObj);
     } else {
         res.status(404).json({ message: 'User not found' });
     }
@@ -109,7 +206,30 @@ const getUserByUsername = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
-        res.json(user);
+        // Privacy Check
+        const isOwner = req.user && req.user._id.toString() === user._id.toString();
+        if (user.isPrivate && !isOwner) {
+            return res.status(403).json({ message: 'This profile is private' });
+        }
+
+        // Calculate Statistics
+        const [threadsCreated, guidesCreated, commentsMade] = await Promise.all([
+            Thread.countDocuments({ author: user._id }),
+            Thread.countDocuments({ author: user._id, isCurated: true }),
+            Post.countDocuments({ author: user._id })
+        ]);
+
+        const stats = {
+            threadsCreated,
+            guidesCreated,
+            communityThreads: threadsCreated - guidesCreated,
+            commentsMade
+        };
+
+        const userObj = user.toObject();
+        userObj.stats = stats;
+
+        res.json(userObj);
     } else {
         res.status(404).json({ message: 'User not found' });
     }
@@ -145,10 +265,39 @@ const topUpStars = async (req, res) => {
     }
 };
 
+// @desc    Get unique values for partner filters (dynamic dropdowns)
+// @route   GET /api/users/filters
+// @access  Public
+const getUniquePartnerFilters = async (req, res) => {
+    try {
+        const query = { lookingForPartner: true };
+
+        const [universities, majors, cities, countries] = await Promise.all([
+            User.distinct('university', query),
+            User.distinct('major', query),
+            User.distinct('city', query),
+            User.distinct('country', query)
+        ]);
+
+        res.json({
+            University: universities.filter(Boolean),
+            Major: majors.filter(Boolean),
+            City: cities.filter(Boolean),
+            Country: countries.filter(Boolean)
+        });
+    } catch (error) {
+        console.error('Error fetching partner filters:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     updateUserProfile,
     getUsers,
     getUserById,
     getUserByUsername,
     topUpStars,
+    blockUser,
+    unblockUser,
+    getUniquePartnerFilters
 };

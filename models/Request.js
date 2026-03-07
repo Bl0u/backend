@@ -13,13 +13,21 @@ const requestSchema = mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['mentorship', 'partner', 'review_alert', 'notification'],
+        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim'],
         required: true
     },
     status: {
         type: String,
         enum: ['pending', 'accepted', 'rejected', 'completed'],
         default: 'pending'
+    },
+    pitchRef: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Request'
+    },
+    claimRole: {
+        type: String,
+        enum: ['teammate', 'mentor']
     },
     message: {
         type: String
@@ -33,6 +41,30 @@ const requestSchema = mongoose.Schema({
         default: false
     },
     claimedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    teamSize: {
+        type: Number,
+        default: 1
+    },
+    mentorNeeded: {
+        type: Boolean,
+        default: false
+    },
+    progress: {
+        type: Number,
+        default: 0
+    },
+    isProBono: {
+        type: Boolean,
+        default: false
+    },
+    contributors: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    }],
+    mentor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
     }

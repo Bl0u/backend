@@ -3,6 +3,7 @@ const router = express.Router();
 const {
     createThread,
     getThreads,
+    getUniqueTags,
     getThreadDetail,
     updateThread,
     updateThreadPrice, // V2.0
@@ -16,7 +17,9 @@ const {
     requestReview,
     acknowledgeInstructions,
     updateInstructions,
-    purchaseThread // V2.0
+    purchaseThread,
+    togglePinThread,
+    getUserActivity
 } = require('../controllers/resourceController');
 const { protect, optionalAuth } = require('../middleware/authMiddleware');
 const multer = require('multer');
@@ -35,6 +38,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 router.get('/', getThreads);
+router.get('/tags', getUniqueTags);
 router.post('/thread', protect, upload.single('file'), createThread);
 router.get('/thread/:id', optionalAuth, getThreadDetail);
 router.put('/thread/:id', protect, updateThread);
@@ -44,6 +48,8 @@ router.post('/thread/:id/moderator', protect, addModerator);
 router.put('/thread/:id/guide', protect, toggleGuideVote);
 router.post('/thread/:id/post', protect, upload.single('file'), addPost);
 router.post('/thread/:id/purchase', protect, purchaseThread); // V2.0: Purchase thread
+router.put('/thread/:id/pin', protect, togglePinThread); // Pin thread
+router.get('/activity', protect, getUserActivity); // Get user activity
 router.delete('/post/:id', protect, deletePost);
 router.put('/post/:id/upvote', protect, toggleUpvote);
 router.post('/post/:id/review', protect, requestReview);

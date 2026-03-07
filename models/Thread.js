@@ -8,6 +8,7 @@ const threadSchema = mongoose.Schema({
     instructions: { type: String }, // Participation guides (Markdown)
     type: { type: String, enum: ['college', 'interview', 'specific', 'general', 'discussion', 'resource'], default: 'discussion' },
     tags: [{ type: String }], // e.g. ["#Java", "#IELTS"]
+    position: { type: String }, // e.g. "Frontend Engineer" for interview prep
     isCurated: { type: Boolean, default: false }, // For "Curated Topics"
     attachments: [{ type: String }], // Array of URLs
     moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
@@ -16,7 +17,8 @@ const threadSchema = mongoose.Schema({
 
     // V2.0: Monetization
     isPaid: { type: Boolean, default: false },
-    price: { type: Number, default: 0 } // Cost in stars
+    price: { type: Number, default: 0 }, // Cost in stars
+    purchasers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
     timestamps: true,
 });

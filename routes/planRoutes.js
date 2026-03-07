@@ -13,11 +13,11 @@ const {
 
 // All routes require authentication
 router.post('/', protect, createPlan);
+router.get('/:id', protect, getPlan);
 router.put('/:id/version', protect, addVersion);
 router.put('/:id/version/:versionIdx', protect, editVersion);
 router.delete('/:id/version/:versionIdx', protect, deleteVersion);
-router.get('/:id', protect, getPlan);
-router.get('/pair/:menteeId', protect, getPlanByPair);
+router.get('/pair/:partnerId', protect, getPlanByPair);
 router.post('/:id/version/:versionIdx/comment', protect, addComment);
 
 module.exports = router;

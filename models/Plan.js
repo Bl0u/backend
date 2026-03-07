@@ -4,12 +4,23 @@ const planSchema = new mongoose.Schema({
     partner1: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false // Changed to false for legacy support
     },
     partner2: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false // Changed to false for legacy support
+    },
+    // Legacy support fields
+    student: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false
+    },
+    mentor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false
     },
     versions: [{
         versionMajor: {

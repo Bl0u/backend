@@ -5,63 +5,49 @@ const userSchema = mongoose.Schema({
     username: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['student', 'admin'], default: 'student' },
+    role: { type: String, enum: ['student', 'admin', 'mentor', 'studentLead'], default: 'student' },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
+    gender: { type: String, enum: ['Male', 'Female'] },
+    isPrivate: { type: Boolean, default: false },
 
     // ===== STUDENT/PARTNER PROFILE FIELDS =====
 
     // 1️⃣ Identity & Academic Context
+    // 1️⃣ Core Identity
     major: { type: String },
     academicLevel: { type: String, enum: ['Level 1', 'Level 2', 'Level 3', 'Level 4', 'Graduated'] },
     university: { type: String },
+    college: { type: String },
+    bio: { type: String, maxlength: 200 }, // Renamed from studyNote
 
-    // 2️⃣ Current Academic Context
-    currentCourses: [{ type: String }],
+    // 2️⃣ Partner Needs
+    partnerType: { type: String, enum: ['peer', 'project teammate'] },
+    matchingGoal: { type: String },
+    topics: [{ type: String }],
+    neededFromPartner: { type: String },
 
-    // 3️⃣ Study & Collaboration Intent
-    primaryStudyGoal: {
-        type: String,
-        enum: ['Exam preparation', 'Assignments', 'Concept mastery', 'Catching up', 'Grade improvement', 'Interview preparation', 'Internship preparation', 'Field-specific learning', 'Language learning']
-    },
-    secondaryStudyGoal: {
-        type: String,
-        enum: ['Exam preparation', 'Assignments', 'Concept mastery', 'Catching up', 'Grade improvement', 'Interview preparation', 'Internship preparation', 'Field-specific learning', 'Language learning']
-    },
-    fieldSpecificDetails: { type: String },
+    // 3️⃣ Location & Logistics
+    city: { type: String },
+    country: { type: String },
+    timezone: { type: String },
+    languages: [{ type: String }],
+    studyMode: { type: String, enum: ['In-person', 'Online', 'Hybrid'] },
+    preferredTools: [{ type: String }],
 
-    // 4️⃣ Study & Partnership Style
-    preferredStudyStyle: {
-        type: String,
-        enum: ['Silent co-study', 'Discussion-based', 'Teaching/explaining', 'Problem-solving focused']
-    },
-    studyPacePreference: {
-        type: String,
-        enum: ['Slow & deep', 'Balanced', 'Fast & exam-oriented']
-    },
-
-    // 5️⃣ Logistics
+    // 4️⃣ Availability & Commitment
     availability: {
         days: [{ type: String }],
         timeRanges: [{ type: String }]
     },
-    studyMode: { type: String, enum: ['In-person', 'Online', 'Hybrid'] },
-    preferredTools: [{ type: String }],
+    commitmentLevel: { type: String, enum: ['Casual', 'Balanced', 'Heavy'] },
 
-    // 6️⃣ Communication & Commitment
-    communicationStyle: { type: String, enum: ['Direct', 'Friendly', 'Structured'] },
-    commitmentLevel: { type: String, enum: ['Casual', 'Weekly sessions', 'Intensive (exam periods)'] },
+    // 5️⃣ Style & Offsets
+    sessionsPerWeek: { type: Number },
+    sessionLength: { type: String },
+    pace: { type: String, enum: ['Slow & deep', 'Balanced', 'Fast'] },
+    canOffer: { type: String },
 
-    // 7️⃣ Language & Accessibility
-    languages: [{ type: String }],
-    accessibilityPreferences: { type: String },
-
-    // 8️⃣ Learning Compatibility 
-    learningTraits: [{ type: String }],
-
-    // 9️⃣ Short Note
-    studyNote: { type: String, maxlength: 200 },
-
-    // Partner Matching
+    // Legacy/Matching
     lookingForPartner: { type: Boolean, default: false },
 
     // ===== COMMON FIELDS =====
@@ -100,7 +86,10 @@ const userSchema = mongoose.Schema({
 
     // ===== V2.0: MONETIZATION FIELDS =====
     stars: { type: Number, default: 0 },
-    purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }]
+    purchasedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
+    pinnedThreads: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Thread' }],
+    blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    isBanned: { type: Boolean, default: false }
 }, {
     timestamps: true,
 });

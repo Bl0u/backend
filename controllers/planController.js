@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const Request = require('../models/Request');
@@ -210,17 +211,31 @@ const getPlan = async (req, res) => {
 
         const userId = req.user.id;
 
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ message: 'Invalid plan ID format' });
+        }
+
         const plan = await Plan.findById(id)
             .populate('partner1', 'name username')
             .populate('partner2', 'name username')
+            .populate('student', 'name username')
+            .populate('mentor', 'name username')
             .populate('versions.comments.author', 'name username');
 
         if (!plan) {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify user is one of the partners
-        if (plan.partner1._id.toString() !== userId && plan.partner2._id.toString() !== userId) {
+        // Verify user is one of the partners (or legacy student/mentor)
+        const isPartner =
+            (plan.partner1 && plan.partner1._id.toString() === userId) ||
+            (plan.partner2 && plan.partner2._id.toString() === userId);
+
+        const isLegacy =
+            (plan.student && plan.student._id.toString() === userId) ||
+            (plan.mentor && plan.mentor._id.toString() === userId);
+
+        if (!isPartner && !isLegacy) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -241,6 +256,8 @@ const getPlanByPair = async (req, res) => {
         let plan = await Plan.findOne({ partner1: userId, partner2: otherId })
             .populate('partner1', 'name username')
             .populate('partner2', 'name username')
+            .populate('student', 'name username')
+            .populate('mentor', 'name username')
             .populate('versions.comments.author', 'name username');
 
         // If not found, try reverse
@@ -248,6 +265,27 @@ const getPlanByPair = async (req, res) => {
             plan = await Plan.findOne({ partner1: otherId, partner2: userId })
                 .populate('partner1', 'name username')
                 .populate('partner2', 'name username')
+                .populate('student', 'name username')
+                .populate('mentor', 'name username')
+                .populate('versions.comments.author', 'name username');
+        }
+
+        // If still not found, try legacy (mentor/student)
+        if (!plan) {
+            plan = await Plan.findOne({ mentor: userId, student: otherId })
+                .populate('partner1', 'name username')
+                .populate('partner2', 'name username')
+                .populate('student', 'name username')
+                .populate('mentor', 'name username')
+                .populate('versions.comments.author', 'name username');
+        }
+
+        if (!plan) {
+            plan = await Plan.findOne({ mentor: otherId, student: userId })
+                .populate('partner1', 'name username')
+                .populate('partner2', 'name username')
+                .populate('student', 'name username')
+                .populate('mentor', 'name username')
                 .populate('versions.comments.author', 'name username');
         }
 

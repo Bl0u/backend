@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Thread = require('../models/Thread');
 const Post = require('../models/Post');
 
@@ -38,8 +39,12 @@ const createThread = async (req, res) => {
 // @access  Public
 const getThreads = async (req, res) => {
     try {
-        const { search, tag, curated } = req.query;
+        const { search, tag, tags, curated, author } = req.query;
         let query = {};
+
+        if (author) {
+            query.author = new mongoose.Types.ObjectId(author);
+        }
 
         if (curated === 'true') {
             query.isCurated = true;
@@ -47,8 +52,14 @@ const getThreads = async (req, res) => {
             query.isCurated = false;
         }
 
-        if (tag) {
+        // Support single tag (legacy) or multiple tags
+        if (tags) {
+            const tagsArray = tags.split(',').map(t => t.startsWith('#') ? t : `#${t}`);
+            query.tags = { $all: tagsArray };
+            delete query.isCurated; // 1.7 Fix: If filtering by tags, ignore tab constraints
+        } else if (tag) {
             query.tags = tag.startsWith('#') ? tag : `#${tag}`;
+            delete query.isCurated; // 1.7 Fix
         }
 
         if (search) {
@@ -91,6 +102,7 @@ const getThreads = async (req, res) => {
                     isCurated: 1,
                     isPaid: 1, // V2.0: Include monetization fields
                     price: 1,  // V2.0
+                    purchasesCount: { $size: { $ifNull: ['$purchasers', []] } },
                     attachments: 1, // Include attachments
                     createdAt: 1,
                     'author.name': 1,
@@ -151,7 +163,15 @@ const getThreadDetail = async (req, res) => {
             .populate('author', 'name username avatar')
             .sort({ upvoteCount: -1, createdAt: 1 });
 
-        res.json({ thread, posts, hasAccess }); // Include hasAccess flag for frontend
+        // Check if thread is pinned by the user
+        let isPinned = false;
+        if (req.user) {
+            const User = require('../models/User');
+            const user = await User.findById(req.user._id);
+            isPinned = user?.pinnedThreads?.includes(req.params.id);
+        }
+
+        res.json({ thread, posts, hasAccess, isPinned }); // Include isPinned flag for frontend
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
@@ -184,21 +204,42 @@ const addPost = async (req, res) => {
             parentPost: req.body.parentPost || null
         });
 
-        // Send notification to thread owner for top-level posts and replies
-        if (thread.author.toString() !== req.user._id.toString()) {
-            const Request = require('../models/Request');
-            const User = require('../models/User');
-            const postAuthor = await User.findById(req.user._id);
-            const isReply = !!req.body.parentPost;
+        // Follow-up Logic 1.0: Handle notifications
+        const User = require('../models/User');
+        const Request = require('../models/Request');
+        const postAuthor = await User.findById(req.user._id);
+        const isReply = !!req.body.parentPost;
 
-            await Request.create({
-                sender: req.user._id,
-                receiver: thread.author,
-                type: 'notification',
-                message: `${postAuthor.name} ${isReply ? 'replied to a post' : 'added a new post'} in your thread "${thread.title}"|||THREAD:${threadId}`,
-                status: 'accepted',
-                isPublic: false
-            });
+        if (isReply) {
+            // Logic 2: Notify author of the msg being replied to
+            const parentPost = await Post.findById(req.body.parentPost);
+            if (parentPost && parentPost.author.toString() !== req.user._id.toString()) {
+                await Request.create({
+                    sender: req.user._id,
+                    receiver: parentPost.author,
+                    type: 'notification',
+                    message: `${postAuthor.name} replied to ur msg at thread "${thread.title}"|||THREAD:${threadId}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
+        } else {
+            // Logic 1: Notify users who pinned the thread (for main comments only)
+            const pinnedUsers = await User.find({ pinnedThreads: threadId });
+
+            for (const pinnedUser of pinnedUsers) {
+                // Don't notify the sender
+                if (pinnedUser._id.toString() === req.user._id.toString()) continue;
+
+                await Request.create({
+                    sender: req.user._id,
+                    receiver: pinnedUser._id,
+                    type: 'notification',
+                    message: `${postAuthor.name} posted "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}" in thread "${thread.title}"|||THREAD:${threadId}`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
         }
 
         res.status(201).json(post);
@@ -638,12 +679,120 @@ const purchaseThread = async (req, res) => {
     }
 };
 
+// @desc    Get all unique tags used across threads
+// @route   GET /api/resources/tags
+// @access  Public
+const getUniqueTags = async (req, res) => {
+    try {
+        const uniqueTags = await Thread.distinct('tags');
+        res.json(uniqueTags);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Toggle pin on a thread
+// @route   PUT /api/resources/thread/:id/pin
+// @access  Private
+const togglePinThread = async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const user = await User.findById(req.user._id);
+        const threadId = req.params.id;
+
+        const isPinned = user.pinnedThreads.includes(threadId);
+
+        if (isPinned) {
+            user.pinnedThreads = user.pinnedThreads.filter(id => id.toString() !== threadId);
+        } else {
+            user.pinnedThreads.push(threadId);
+        }
+
+        await user.save();
+        res.json({ isPinned: !isPinned, pinnedThreads: user.pinnedThreads });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get user activity (Moderate, Paid, Pinned)
+// @route   GET /api/resources/activity
+// @access  Private
+const getUserActivity = async (req, res) => {
+    try {
+        const { type } = req.query;
+        const userId = req.user._id;
+        let query = {};
+
+        if (type === 'moderate') {
+            // Threads where user is a moderator but NOT the author
+            query = {
+                moderators: userId,
+                author: { $ne: userId }
+            };
+        } else if (type === 'paid') {
+            const User = require('../models/User');
+            const user = await User.findById(userId);
+            query = { _id: { $in: user.purchasedThreads || [] } };
+        } else if (type === 'pinned') {
+            const User = require('../models/User');
+            const user = await User.findById(userId);
+            query = { _id: { $in: user.pinnedThreads || [] } };
+        } else {
+            return res.status(400).json({ message: 'Invalid activity type' });
+        }
+
+        // Fetch threads with basic info and post counts
+        const threads = await Thread.aggregate([
+            { $match: query },
+            {
+                $lookup: {
+                    from: 'posts',
+                    localField: '_id',
+                    foreignField: 'thread',
+                    as: 'posts'
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'author',
+                    foreignField: '_id',
+                    as: 'author'
+                }
+            },
+            { $unwind: '$author' },
+            {
+                $project: {
+                    title: 1,
+                    description: 1,
+                    tags: 1,
+                    isCurated: 1,
+                    isPaid: 1,
+                    price: 1,
+                    createdAt: 1,
+                    'author.name': 1,
+                    'author.username': 1,
+                    postCount: { $size: '$posts' },
+                    upvoteCount: { $sum: '$posts.upvoteCount' }
+                }
+            },
+            { $sort: { createdAt: -1 } }
+        ]);
+
+        res.json(threads);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 module.exports = {
     createThread,
     getThreads,
+    getUniqueTags,
     getThreadDetail,
     updateThread,
-    updateThreadPrice, // V2.0
+    updateThreadPrice,
     deleteThread,
     addModerator,
     removeModerator,
@@ -654,5 +803,7 @@ module.exports = {
     toggleUpvote,
     requestReview,
     updateInstructions,
-    purchaseThread, // V2.0
+    purchaseThread,
+    togglePinThread,
+    getUserActivity,
 };
