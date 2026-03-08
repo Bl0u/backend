@@ -2,8 +2,10 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const dotenv = require('dotenv');
 
+const path = require('path');
+
 // Load env vars
-dotenv.config({ path: '../.env' });
+dotenv.config({ path: path.join(__dirname, '../.env') });
 
 // Models
 const User = require('../models/User');
@@ -47,7 +49,7 @@ const importData = async () => {
 
         // Define Base Full Profile Information
         const baseProfileA = {
-            name: 'Alice',
+            name: 'Alice Johnson',
             email: 'a@example.com',
             username: 'a',
             password: hashedA,
@@ -56,31 +58,13 @@ const importData = async () => {
             major: 'Computer Science',
             academicLevel: 'Level 3',
             university: 'Cairo University',
-            bio: 'I am a passionate CS student looking to collaborate on AI projects and deeply understand data structures.',
-            partnerType: 'peer',
-            matchingGoal: 'I want to build a deep learning model for computer vision.',
-            topics: ['Machine Learning', 'Computer Vision', 'Python', 'Algorithms'],
-            neededFromPartner: 'Someone with strong math background and Python skills to help with the algorithms.',
-            timezone: 'UTC+2',
-            languages: ['English', 'Arabic'],
-            studyMode: 'Hybrid',
-            preferredTools: ['Zoom', 'GitHub', 'VS Code', 'Discord'],
-            availability: {
-                days: ['Monday', 'Wednesday', 'Friday'],
-                timeRanges: ['Evening (6PM - 10PM)']
-            },
-            commitmentLevel: 'Heavy',
-            sessionsPerWeek: 3,
-            sessionLength: '2 hours',
-            pace: 'Balanced',
-            canOffer: 'Strong programming skills in Python & React, and experience with UI/UX.',
+            bio: 'CS student passionate about AI and algorithms.',
             lookingForPartner: true,
-            skills: ['Python', 'React', 'MongoDB', 'Node.js'],
-            interests: ['AI', 'Open Source', 'Hackathons']
+            stars: 100
         };
 
         const baseProfileB = {
-            name: 'Bob',
+            name: 'Bob Smith',
             email: 'b@example.com',
             username: 'b',
             password: hashedB,
@@ -89,31 +73,13 @@ const importData = async () => {
             major: 'Software Engineering',
             academicLevel: 'Level 4',
             university: 'Ain Shams University',
-            bio: 'Focusing on distributed systems and cloud architecture. Looking for serious peers to study system design.',
-            partnerType: 'project teammate',
-            matchingGoal: 'Study System Design and prepare for FAANG interviews.',
-            topics: ['System Design', 'Cloud Computing', 'AWS', 'Distributed Systems'],
-            neededFromPartner: 'Someone who has experience with backend architecture and microservices.',
-            timezone: 'UTC+3',
-            languages: ['English'],
-            studyMode: 'Online',
-            preferredTools: ['Google Meet', 'Slack', 'Jira'],
-            availability: {
-                days: ['Saturday', 'Sunday'],
-                timeRanges: ['Morning (8AM - 12PM)']
-            },
-            commitmentLevel: 'Balanced',
-            sessionsPerWeek: 2,
-            sessionLength: '3 hours',
-            pace: 'Fast',
-            canOffer: 'Deep knowledge of AWS, Docker, Kubernetes, and Golang.',
+            bio: 'Focusing on backend systems and cloud.',
             lookingForPartner: true,
-            skills: ['Golang', 'Docker', 'AWS', 'System Design'],
-            interests: ['Cloud Tech', 'Backend Development', 'Competitive Programming']
+            stars: 150
         };
 
         const baseProfileC = {
-            name: 'Charlie',
+            name: 'Charlie Brown',
             email: 'c@example.com',
             username: 'c',
             password: hashedC,
@@ -122,31 +88,13 @@ const importData = async () => {
             major: 'Information Technology',
             academicLevel: 'Level 2',
             university: 'Alexandria University',
-            bio: 'Interested in cybersecurity and ethical hacking. Let us secure the web together!',
-            partnerType: 'peer',
-            matchingGoal: 'Participate in CTF competitions and learn about web vulnerabilities.',
-            topics: ['Cybersecurity', 'Ethical Hacking', 'Networking', 'Linux'],
-            neededFromPartner: 'Must know basic Linux commands and network protocols.',
-            timezone: 'UTC+2',
-            languages: ['English', 'Arabic', 'French'],
-            studyMode: 'In-person',
-            preferredTools: ['Telegram', 'Discord'],
-            availability: {
-                days: ['Tuesday', 'Thursday'],
-                timeRanges: ['Night (10PM - 2AM)']
-            },
-            commitmentLevel: 'Casual',
-            sessionsPerWeek: 1,
-            sessionLength: '1.5 hours',
-            pace: 'Slow & deep',
-            canOffer: 'Scripting in Bash and fundamental networking knowledge.',
+            bio: 'Cybersecurity enthusiast.',
             lookingForPartner: true,
-            skills: ['Linux', 'Bash', 'Networking', 'Python'],
-            interests: ['CTFs', 'Cybersecurity', 'Hardware']
+            stars: 200
         };
 
         const baseProfileD = {
-            name: 'Diana',
+            name: 'Diana Prince',
             email: 'd@example.com',
             username: 'd',
             password: hashedD,
@@ -155,27 +103,9 @@ const importData = async () => {
             major: 'Data Science',
             academicLevel: 'Graduated',
             university: 'Helwan University',
-            bio: 'Data enthusiast diving into big data analytics and statistical modeling. Seeking peers to review research papers.',
-            partnerType: 'peer',
-            matchingGoal: 'Review and discuss recent research papers in Data Science and LLMs.',
-            topics: ['Data Science', 'Statistics', 'NLP', 'Big Data'],
-            neededFromPartner: 'Strong mathematical foundation and ability to read academic papers critically.',
-            timezone: 'UTC+2',
-            languages: ['English', 'Arabic', 'German'],
-            studyMode: 'Hybrid',
-            preferredTools: ['Zoom', 'Webex', 'Notion'],
-            availability: {
-                days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-                timeRanges: ['Afternoon (12PM - 4PM)']
-            },
-            commitmentLevel: 'Heavy',
-            sessionsPerWeek: 4,
-            sessionLength: '2 hours',
-            pace: 'Balanced',
-            canOffer: 'Expertise in R, Pandas, and advanced statistical analysis.',
+            bio: 'Data analyst and stat nerd.',
             lookingForPartner: true,
-            skills: ['R', 'Pandas', 'SQL', 'NLP', 'Statistics'],
-            interests: ['Research', 'Machine Learning', 'Data Visualization']
+            stars: 300
         };
 
         const users = await User.insertMany([baseProfileA, baseProfileB, baseProfileC, baseProfileD]);
