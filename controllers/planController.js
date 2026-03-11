@@ -110,7 +110,7 @@ const addVersion = async (req, res) => {
                 receiver: otherPartnerId,
                 type: 'notification',
                 message: `${author.name} published a new version (v${newMajor}.${newMinor}) of your collaboration plan|||PLAN:${plan._id}`,
-                status: 'accepted',
+                status: 'pending',
                 isPublic: false
             });
         }
@@ -408,7 +408,7 @@ const addComment = async (req, res) => {
             receiver: recipientId,
             type: 'notification',
             message: `${user.name} commented on ${versionLabel} of your collaboration plan|||PLAN:${plan._id}`,
-            status: 'accepted',
+            status: 'pending',
             isPublic: false
         });
 

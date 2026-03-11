@@ -94,6 +94,10 @@ const getPublicPitches = async (req, res) => {
             .populate('sender', 'name username role profilePicture')
             .populate('contributors', 'name username avatar')
             .populate('mentor', 'name username avatar')
+            .populate({
+                path: 'roles.filledBy',
+                select: 'name username avatar'
+            })
             .sort({ createdAt: -1 });
         res.json(pitches);
     } catch (error) {
@@ -169,6 +173,15 @@ const handlePitchEnrollment = async (request, user, role, res) => {
             return res.status(400).json({ message: 'All teammate slots are already filled' });
         }
         request.contributors.push(user._id);
+
+        // SYNC: Find and fill the specific role in the roles array
+        if (request.roles && request.roles.length > 0) {
+            const specificRole = request.roles.find(r => r.name === role && !r.isFilled);
+            if (specificRole) {
+                specificRole.isFilled = true;
+                specificRole.filledBy = user._id;
+            }
+        }
     }
 
     // Check if mission is fully staffed
