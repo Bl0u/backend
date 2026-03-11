@@ -9,13 +9,21 @@ const messageSchema = mongoose.Schema({
     receiver: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: function () { return !this.groupChat; }
+    },
+    groupChat: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'GroupChat'
     },
     content: {
         type: String,
         required: true
     },
     isRead: {
+        type: Boolean,
+        default: false
+    },
+    isAnnouncement: {
         type: Boolean,
         default: false
     }
