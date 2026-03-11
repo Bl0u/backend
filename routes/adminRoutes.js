@@ -18,7 +18,9 @@ const {
     resetDatabase,
     promoteUser,
     getPitchConfig,
-    updatePitchConfig
+    updatePitchConfig,
+    getPitchesAdmin,
+    deletePitchAdmin
 } = require('../controllers/adminController');
 
 // Public config GET (still protected by session/token if desired, but not adminOnly)
@@ -55,6 +57,10 @@ router.put('/recruitment/:id', updateRecruitment);
 
 // Pitch Hub Config
 router.put('/pitch-config', updatePitchConfig);
+
+// Pitch Hub management
+router.get('/pitches', getPitchesAdmin);
+router.delete('/pitches/:id', deletePitchAdmin);
 
 // Database Reset (DANGER)
 router.delete('/reset', resetDatabase);

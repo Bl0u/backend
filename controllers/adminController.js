@@ -663,6 +663,42 @@ const updatePitchConfig = async (req, res) => {
     }
 };
 
+// @desc    Get all project pitches for management
+// @route   GET /api/admin/pitches
+// @access  Admin
+const getPitchesAdmin = async (req, res) => {
+    try {
+        const pitches = await Request.find({ isPublic: true })
+            .populate('sender', 'name username')
+            .sort({ createdAt: -1 });
+        res.json(pitches);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a project pitch (Admin)
+// @route   DELETE /api/admin/pitches/:id
+// @access  Admin
+const deletePitchAdmin = async (req, res) => {
+    try {
+        const pitch = await Request.findById(req.params.id);
+        if (!pitch) {
+            return res.status(404).json({ message: 'Pitch not found' });
+        }
+
+        // Delete the pitch
+        await Request.findByIdAndDelete(req.params.id);
+
+        // Optional: Clean up related pitch_claims
+        await Request.deleteMany({ pitchRef: req.params.id, type: 'pitch_claim' });
+
+        res.json({ message: 'Pitch and related claims removed successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -680,5 +716,7 @@ module.exports = {
     resetDatabase,
     promoteUser,
     getPitchConfig,
-    updatePitchConfig
+    updatePitchConfig,
+    getPitchesAdmin,
+    deletePitchAdmin
 };
