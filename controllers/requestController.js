@@ -92,7 +92,8 @@ const getPublicPitches = async (req, res) => {
             status: { $in: ['pending', 'accepted'] }
         })
             .populate('sender', 'name username role profilePicture')
-            .populate('contributors', 'name username avatar') // Populate contributors for progress view
+            .populate('contributors', 'name username avatar')
+            .populate('mentor', 'name username avatar')
             .sort({ createdAt: -1 });
         res.json(pitches);
     } catch (error) {
@@ -110,7 +111,7 @@ const claimPublicPitch = async (req, res) => {
         return res.status(404).json({ message: 'Public pitch not found or already filled' });
     }
 
-    const { role } = req.body; // 'teammate' or 'mentor'
+    const { role, roleName } = req.body; // 'teammate' or 'mentor', plus specific role name
     const claimingUser = await User.findById(req.user.id);
 
     if (role === 'mentor' && claimingUser.role !== 'mentor') {
@@ -135,8 +136,9 @@ const claimPublicPitch = async (req, res) => {
         type: 'pitch_claim',
         pitchRef: request._id,
         claimRole: role || 'teammate',
+        roleName: roleName || role || 'teammate',
         status: 'pending',
-        message: `Wants to join as ${role || 'teammate'}`
+        message: `Wants to join as ${roleName || role || 'teammate'}`
     });
 
     return res.json({

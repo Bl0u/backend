@@ -29,6 +29,9 @@ const requestSchema = mongoose.Schema({
         type: String,
         enum: ['teammate', 'mentor']
     },
+    roleName: {
+        type: String
+    },
     message: {
         type: String
     },
