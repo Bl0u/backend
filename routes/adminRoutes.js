@@ -16,10 +16,15 @@ const {
     getRecruitment,
     updateRecruitment,
     resetDatabase,
-    promoteUser
+    promoteUser,
+    getPitchConfig,
+    updatePitchConfig
 } = require('../controllers/adminController');
 
-// All routes require protect + adminOnly
+// Public config GET (still protected by session/token if desired, but not adminOnly)
+router.get('/pitch-config', protect, getPitchConfig);
+
+// All routes below require protect + adminOnly
 router.use(protect, adminOnly);
 
 // Overview
@@ -47,6 +52,9 @@ router.get('/payments', getPayments);
 // Recruitment
 router.get('/recruitment', getRecruitment);
 router.put('/recruitment/:id', updateRecruitment);
+
+// Pitch Hub Config
+router.put('/pitch-config', updatePitchConfig);
 
 // Database Reset (DANGER)
 router.delete('/reset', resetDatabase);

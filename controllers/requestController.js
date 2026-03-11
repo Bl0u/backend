@@ -5,7 +5,7 @@ const User = require('../models/User');
 // @route   POST /api/requests
 // @access  Private
 const sendRequest = async (req, res) => {
-    const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono } = req.body;
+    const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono, roles } = req.body;
 
     if (!isPublic && req.user.id === receiverId) {
         return res.status(400).json({ message: 'Cannot send request to yourself' });
@@ -46,7 +46,8 @@ const sendRequest = async (req, res) => {
         isPublic: !!isPublic,
         teamSize: teamSize || 1,
         mentorNeeded: !!mentorNeeded,
-        isProBono: !!isProBono
+        isProBono: !!isProBono,
+        roles: roles || []
     });
 
     res.status(201).json(request);
@@ -111,6 +112,10 @@ const claimPublicPitch = async (req, res) => {
 
     const { role } = req.body; // 'teammate' or 'mentor'
     const claimingUser = await User.findById(req.user.id);
+
+    if (role === 'mentor' && claimingUser.role !== 'mentor') {
+        return res.status(403).json({ message: 'Only accounts with the "mentor" role can apply for mentor missions' });
+    }
 
     // UNIFIED: All joins now require approval
     const existingClaim = await Request.findOne({

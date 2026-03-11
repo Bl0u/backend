@@ -67,7 +67,14 @@ const requestSchema = mongoose.Schema({
     mentor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
-    }
+    },
+    roles: [{
+        name: String,
+        requirements: String,
+        roleType: { type: String, enum: ['teammate', 'mentor'], default: 'teammate' },
+        isFilled: { type: Boolean, default: false },
+        filledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });

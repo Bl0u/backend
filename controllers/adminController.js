@@ -8,6 +8,7 @@ const Message = require('../models/Message');
 const Request = require('../models/Request');
 const Review = require('../models/Review');
 const Plan = require('../models/Plan');
+const PitchConfig = require('../models/PitchConfig');
 
 // ==============================
 // OVERVIEW / STATS
@@ -620,6 +621,48 @@ const resetDatabase = async (req, res) => {
     }
 };
 
+// ==============================
+// PITCH HUB CONFIG
+// ==============================
+
+// @desc    Get global pitch configuration
+// @route   GET /api/admin/pitch-config
+// @access  Admin
+const getPitchConfig = async (req, res) => {
+    try {
+        let config = await PitchConfig.findOne();
+        if (!config) {
+            // Return default/empty if none exists
+            config = { categories: [], questions: [] };
+        }
+        res.json(config);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Update global pitch configuration
+// @route   PUT /api/admin/pitch-config
+// @access  Admin
+const updatePitchConfig = async (req, res) => {
+    try {
+        const { categories, questions, rolesEnabled } = req.body;
+        let config = await PitchConfig.findOne();
+
+        if (config) {
+            config.categories = categories;
+            config.questions = questions;
+            config.rolesEnabled = rolesEnabled;
+            await config.save();
+        } else {
+            config = await PitchConfig.create({ categories, questions, rolesEnabled });
+        }
+        res.json(config);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -635,5 +678,7 @@ module.exports = {
     getRecruitment,
     updateRecruitment,
     resetDatabase,
-    promoteUser
+    promoteUser,
+    getPitchConfig,
+    updatePitchConfig
 };
