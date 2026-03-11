@@ -8,6 +8,7 @@ const {
     deleteVersion,
     getPlan,
     getPlanByPair,
+    getProjectPlan,
     addComment
 } = require('../controllers/planController');
 
@@ -18,6 +19,7 @@ router.put('/:id/version', protect, addVersion);
 router.put('/:id/version/:versionIdx', protect, editVersion);
 router.delete('/:id/version/:versionIdx', protect, deleteVersion);
 router.get('/pair/:partnerId', protect, getPlanByPair);
+router.get('/project/:projectId', protect, getProjectPlan);
 router.post('/:id/version/:versionIdx/comment', protect, addComment);
 
 module.exports = router;

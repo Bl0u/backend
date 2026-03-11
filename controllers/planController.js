@@ -87,7 +87,6 @@ const addVersion = async (req, res) => {
         const newMinor = isMajor ? 0 : lastVersion.versionMinor + 1;
 
         // Create notification for the other partner
-        const otherPartnerId = plan.partner1.toString() === currentUserId ? plan.partner2 : plan.partner1;
         const author = await User.findById(currentUserId);
 
         plan.versions.push({
@@ -101,14 +100,20 @@ const addVersion = async (req, res) => {
 
         await plan.save();
 
-        await Request.create({
-            sender: currentUserId,
-            receiver: otherPartnerId,
-            type: 'notification',
-            message: `${author.name} published a new version (v${newMajor}.${newMinor}) of your collaboration plan|||PLAN:${plan._id}`,
-            status: 'accepted',
-            isPublic: false
-        });
+        if (plan.projectRef) {
+            // Project plan notification logic
+            // We could notify everyone, but for now just log it or notify Lead if not author
+        } else {
+            const otherPartnerId = plan.partner1.toString() === currentUserId ? plan.partner2 : plan.partner1;
+            await Request.create({
+                sender: currentUserId,
+                receiver: otherPartnerId,
+                type: 'notification',
+                message: `${author.name} published a new version (v${newMajor}.${newMinor}) of your collaboration plan|||PLAN:${plan._id}`,
+                status: 'accepted',
+                isPublic: false
+            });
+        }
 
         // Populate all required fields before returning
         await plan.populate('partner1', 'name username');
@@ -226,7 +231,7 @@ const getPlan = async (req, res) => {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify user is one of the partners (or legacy student/mentor)
+        // Verify user is one of the partners (or legacy student/mentor) or project member
         const isPartner =
             (plan.partner1 && plan.partner1._id.toString() === userId) ||
             (plan.partner2 && plan.partner2._id.toString() === userId);
@@ -235,7 +240,18 @@ const getPlan = async (req, res) => {
             (plan.student && plan.student._id.toString() === userId) ||
             (plan.mentor && plan.mentor._id.toString() === userId);
 
-        if (!isPartner && !isLegacy) {
+        let isProjectMember = false;
+        if (plan.projectRef) {
+            const project = await Request.findById(plan.projectRef);
+            if (project) {
+                isProjectMember =
+                    project.sender.toString() === userId ||
+                    project.contributors.some(c => c.toString() === userId) ||
+                    (project.mentor && project.mentor.toString() === userId);
+            }
+        }
+
+        if (!isPartner && !isLegacy && !isProjectMember) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -297,6 +313,57 @@ const getPlanByPair = async (req, res) => {
         res.json(plan);
     } catch (error) {
         console.error('Get plan by pair error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Get or create a plan for a project team
+// @route   GET /api/plans/project/:projectId
+// @access  Private
+const getProjectPlan = async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const userId = req.user.id;
+
+        const project = await Request.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Check membership
+        const isMember =
+            project.sender.toString() === userId ||
+            project.contributors.some(c => c.toString() === userId) ||
+            (project.mentor && project.mentor.toString() === userId);
+
+        if (!isMember) {
+            return res.status(403).json({ message: 'Access denied - you are not a member of this project' });
+        }
+
+        let plan = await Plan.findOne({ projectRef: projectId })
+            .populate('projectRef')
+            .populate('versions.comments.author', 'name username avatar');
+
+        if (!plan) {
+            // Create default plan for project
+            const pitchTitle = project.pitch?.get('Hook') || project.pitch?.get('The Hook (Short summary)') || "Mission";
+            plan = new Plan({
+                projectRef: projectId,
+                versions: [{
+                    versionMajor: 0,
+                    versionMinor: 0,
+                    title: `${pitchTitle} Collaboration Workspace`,
+                    content: `# ${pitchTitle}\n\nWelcome to your shared project plan. Start collaborating here!`,
+                    authorName: 'System',
+                    comments: []
+                }]
+            });
+            await plan.save();
+        }
+
+        res.json(plan);
+    } catch (error) {
+        console.error('Get project plan error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
@@ -364,5 +431,6 @@ module.exports = {
     deleteVersion,
     getPlan,
     getPlanByPair,
+    getProjectPlan,
     addComment
 };

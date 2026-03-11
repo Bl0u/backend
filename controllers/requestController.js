@@ -576,6 +576,10 @@ const checkConnection = async (req, res) => {
 // @access  Private
 const getMyProjects = async (req, res) => {
     try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ message: 'Not authorized' });
+        }
+
         const projects = await Request.find({
             isPublic: true,
             $or: [
@@ -589,9 +593,51 @@ const getMyProjects = async (req, res) => {
             .populate('mentor', 'name username avatar')
             .sort({ updatedAt: -1 });
 
-        res.json(projects);
+        res.json(projects || []);
     } catch (error) {
         console.error('Error fetching projects:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// @desc    Mark project as completed
+// @route   PUT /api/requests/:id/complete
+// @access  Private
+const completeProject = async (req, res) => {
+    try {
+        const project = await Request.findById(req.params.id);
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Only the project owner (sender) can complete it
+        if (project.sender.toString() !== req.user.id) {
+            return res.status(401).json({ message: 'Only the project lead can complete this mission' });
+        }
+
+        project.status = 'completed';
+        await project.save();
+
+        // Notify all members
+        const members = [...(project.contributors || []), project.mentor].filter(Boolean);
+
+        const pitchTitle = project.pitch?.get('Hook') || project.pitch?.get('The Hook (Short summary)') || "Mission";
+
+        for (const memberId of members) {
+            await Request.create({
+                sender: req.user.id,
+                receiver: memberId,
+                type: 'notification',
+                message: `Mission Accomplished! 🏁 The project "${pitchTitle}" has been marked as completed. Well done!`,
+                status: 'accepted',
+                isPublic: false
+            });
+        }
+
+        res.json({ message: 'Project completed successfully', project });
+    } catch (error) {
+        console.error('Error completing project:', error);
         res.status(500).json({ message: 'Server Error' });
     }
 };
@@ -610,5 +656,6 @@ module.exports = {
     endRelationship,
     cancelRequest,
     updateRelationshipNote,
-    getMyProjects
+    getMyProjects,
+    completeProject
 };
