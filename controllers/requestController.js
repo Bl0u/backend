@@ -176,9 +176,9 @@ const handlePitchEnrollment = async (request, user, role, res) => {
     const isMentorFull = !request.mentorNeeded || !!request.mentor;
 
     if (isTeamFull && isMentorFull) {
-        request.status = 'completed'; // Filled -> Remove from Hub
+        request.status = 'ongoing'; // ACTIVE MISSION -> Moved from 'completed'
     } else {
-        request.status = 'accepted'; // Partly Filled -> Keep in Hub for both types
+        request.status = 'accepted'; // Partly Filled -> Keep in Hub
     }
 
     // Always ensure one main receiver is set for legacy compatibility
@@ -194,71 +194,77 @@ const handlePitchEnrollment = async (request, user, role, res) => {
 
     await request.save();
 
-    // Enroll Partners
-    const sender = await User.findById(request.sender);
-    if (sender) {
-        // Check if already enrolled to prevent double entries
-        const alreadyEnrolled = user.enrolledPartners.some(p => p.user.toString() === sender._id.toString() && p.status === 'active');
-
-        if (!alreadyEnrolled) {
-            user.enrolledPartners.push({ user: sender._id, status: 'active' });
-            await user.save();
-
-            sender.enrolledPartners.push({ user: user._id, status: 'active' });
-            await sender.save();
-        }
-
-        // Create collaboration plan
+    // Mission Plan Consolidation
+    const owner = await User.findById(request.sender);
+    if (owner) {
         try {
             const Plan = require('../models/Plan');
-            const existingPlan = await Plan.findOne({
-                $or: [
-                    { partner1: user._id, partner2: sender._id },
-                    { partner1: sender._id, partner2: user._id }
-                ]
-            });
 
-            if (!existingPlan) {
-                const defaultContent = `# Collaboration Plan\n\nWelcome to your shared project roadmap.`;
-                const newPlan = new Plan({
-                    partner1: user._id,
-                    partner2: sender._id,
-                    versions: [{
-                        versionMajor: 0,
-                        versionMinor: 0,
-                        title: 'Initial Collaboration Plan',
-                        content: user.planTemplate || sender.planTemplate || defaultContent,
-                        authorName: user.name,
-                        comments: []
-                    }]
+            // Check if a plan already exists for this specific PROJECT
+            let projectPlan = await Plan.findOne({ projectRef: request._id });
+
+            if (!projectPlan) {
+                // If no plan exists for the project, check legacy pair-wise plan (Owner + Joiner)
+                projectPlan = await Plan.findOne({
+                    $or: [
+                        { partner1: user._id, partner2: owner._id },
+                        { partner1: owner._id, partner2: user._id }
+                    ]
                 });
-                await newPlan.save();
 
-                // FIX: Extract pitch title correctly and notify JOINER
-                const pitchTitle = request.pitch?.get('Hook') || request.pitch?.get('The Hook (Short summary)') || "New Project";
+                if (!projectPlan) {
+                    // Create NEW Unified Project Plan
+                    const defaultContent = `# Mission Control: ${request.pitch?.get('Hook') || "Project"}\n\nWelcome to your unified team workspace. Collaborate on your mission goals here.`;
+                    projectPlan = new Plan({
+                        partner1: owner._id,
+                        partner2: user._id, // Keep for legacy, but we'll use projectRef for team
+                        projectRef: request._id,
+                        versions: [{
+                            versionMajor: 0,
+                            versionMinor: 0,
+                            title: 'Initial Mission Plan',
+                            content: owner.planTemplate || user.planTemplate || defaultContent,
+                            authorName: owner.name,
+                            comments: []
+                        }]
+                    });
+                    await projectPlan.save();
+                } else {
+                    // Upgrade legacy plan to include projectRef
+                    projectPlan.projectRef = request._id;
+                    await projectPlan.save();
+                }
+            }
 
-                await Request.create({
-                    sender: sender._id,
-                    receiver: user._id,
-                    type: 'notification',
-                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Collaborative plan created.|||PLAN:${newPlan._id}`,
-                    status: 'accepted',
-                    isPublic: false
-                });
+            const pitchTitle = request.pitch?.get('Hook') || request.pitch?.get('The Hook (Short summary)') || "New Project";
+
+            // If mission just became ongoing, notify the WHOLE team
+            if (request.status === 'ongoing') {
+                const teamMembers = [...(request.contributors || []), request.mentor, request.sender].filter(Boolean);
+
+                for (const memberId of teamMembers) {
+                    await Request.create({
+                        sender: owner._id,
+                        receiver: memberId,
+                        type: 'notification',
+                        message: `MISSION START! 🚀 "${pitchTitle}" is fully staffed and ready for action. Visit the unified plan.|||PLAN:${projectPlan._id}`,
+                        status: 'accepted',
+                        isPublic: false
+                    });
+                }
             } else {
-                // If plan exists, still notify joiner
-                const pitchTitle = request.pitch?.get('Hook') || request.pitch?.get('The Hook (Short summary)') || "New Project";
+                // Just notify the joiner
                 await Request.create({
-                    sender: sender._id,
+                    sender: owner._id,
                     receiver: user._id,
                     type: 'notification',
-                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Check your shared plan.|||PLAN:${existingPlan._id}`,
+                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Visit the project plan.|||PLAN:${projectPlan._id}`,
                     status: 'accepted',
                     isPublic: false
                 });
             }
         } catch (error) {
-            console.error('Plan creation error in claim:', error);
+            console.error('Unified Plan creation error:', error);
         }
     }
 

@@ -18,7 +18,7 @@ const requestSchema = mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['pending', 'accepted', 'rejected', 'completed'],
+        enum: ['pending', 'accepted', 'rejected', 'completed', 'ongoing'],
         default: 'pending'
     },
     pitchRef: {
