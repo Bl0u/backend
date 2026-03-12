@@ -5,14 +5,27 @@ const groupChatSchema = mongoose.Schema({
     description: { type: String },
     creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // System-created groups might not have a creator
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     groupType: {
         type: String,
-        enum: ['level', 'custom', 'elite'],
+        // enum: ['level', 'custom', 'elite'], // Removed strict enum to support dynamic types
         default: 'custom'
     },
-    academicLevel: { type: String }, // For 'level' type groups
+    communityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
     isOfficial: { type: Boolean, default: false },
-    avatar: { type: String, default: 'https://via.placeholder.com/150' }
+    avatar: { type: String, default: 'https://via.placeholder.com/150' },
+
+    // Metadata for official groups (University, School, etc.)
+    metadata: {
+        university: { type: String },
+        college: { type: String },
+        academicLevel: { type: String }, // Level 1, 2, 3, 4
+        grade: { type: String },
+        institution: { type: String }
+    },
+
+    // Legacy support
+    academicLevel: { type: String }, // For 'level' type groups (internal)
 }, {
     timestamps: true,
 });

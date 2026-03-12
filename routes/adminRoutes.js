@@ -20,11 +20,21 @@ const {
     getPitchConfig,
     updatePitchConfig,
     getPitchesAdmin,
-    deletePitchAdmin
+    deletePitchAdmin,
+    createCommunity,
+    getCommunities,
+    updateGroupConfig,
+    getGroupConfigs,
+    addOfficialGroup,
+    assignModerator
 } = require('../controllers/adminController');
 
 // Public config GET (still protected by session/token if desired, but not adminOnly)
 router.get('/pitch-config', protect, getPitchConfig);
+
+// Public/Semi-public getters for communities and configs
+router.get('/communities', protect, getCommunities);
+router.get('/group-configs', protect, getGroupConfigs);
 
 // All routes below require protect + adminOnly
 router.use(protect, adminOnly);
@@ -61,6 +71,12 @@ router.put('/pitch-config', updatePitchConfig);
 // Pitch Hub management
 router.get('/pitches', getPitchesAdmin);
 router.delete('/pitches/:id', deletePitchAdmin);
+
+// Communities & Group Configs
+router.post('/communities', createCommunity);
+router.post('/group-configs', updateGroupConfig);
+router.post('/communities/:id/groups', addOfficialGroup);
+router.put('/groups/:id/moderators', assignModerator);
 
 // Database Reset (DANGER)
 router.delete('/reset', resetDatabase);

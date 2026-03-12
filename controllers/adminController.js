@@ -9,6 +9,9 @@ const Request = require('../models/Request');
 const Review = require('../models/Review');
 const Plan = require('../models/Plan');
 const PitchConfig = require('../models/PitchConfig');
+const Community = require('../models/Community');
+const GroupConfig = require('../models/GroupConfig');
+const GroupChat = require('../models/GroupChat');
 
 // ==============================
 // OVERVIEW / STATS
@@ -622,33 +625,34 @@ const resetDatabase = async (req, res) => {
 };
 
 // ==============================
-// PITCH HUB CONFIG
+// PITCH HUB CONFIGURATION
 // ==============================
 
-// @desc    Get global pitch configuration
+// @desc    Get dynamic pitch questions config
 // @route   GET /api/admin/pitch-config
-// @access  Admin
+// @access  Private (Accessed by public but often managed by admin)
 const getPitchConfig = async (req, res) => {
     try {
         let config = await PitchConfig.findOne();
         if (!config) {
-            // Return default/empty if none exists
-            config = { categories: [], questions: [] };
+            // Return empty defaults if not setup
+            return res.json({ categories: [], questions: [], rolesEnabled: false });
         }
         res.json(config);
     } catch (error) {
+        console.error('Admin getPitchConfig error:', error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Update global pitch configuration
-// @route   PUT /api/admin/pitch-config
+// @desc    Update pitch questions config
+// @route   POST /api/admin/pitch-config
 // @access  Admin
 const updatePitchConfig = async (req, res) => {
     try {
         const { categories, questions, rolesEnabled } = req.body;
-        let config = await PitchConfig.findOne();
 
+        let config = await PitchConfig.findOne();
         if (config) {
             config.categories = categories;
             config.questions = questions;
@@ -657,43 +661,167 @@ const updatePitchConfig = async (req, res) => {
         } else {
             config = await PitchConfig.create({ categories, questions, rolesEnabled });
         }
+
+        res.json({ message: 'Pitch configuration updated', config });
+    } catch (error) {
+        console.error('Admin updatePitchConfig error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==============================
+// PITCH MANAGEMENT (ADMIN)
+// ==============================
+
+// @desc    Get all public pitches
+// @route   GET /api/admin/pitches
+// @access  Admin
+const getPitchesAdmin = async (req, res) => {
+    try {
+        const pitches = await Request.find({ type: 'pitch_claim', isPublic: true })
+            .populate('sender', 'name username email avatar')
+            .sort({ createdAt: -1 });
+
+        res.json(pitches);
+    } catch (error) {
+        console.error('Admin getPitchesAdmin error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a pitch
+// @route   DELETE /api/admin/pitches/:id
+// @access  Admin
+const deletePitchAdmin = async (req, res) => {
+    try {
+        const pitch = await Request.findByIdAndDelete(req.params.id);
+        if (!pitch) {
+            return res.status(404).json({ message: 'Pitch not found' });
+        }
+        res.json({ message: 'Pitch deleted successfully' });
+    } catch (error) {
+        console.error('Admin deletePitchAdmin error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==============================
+// COMMUNITIES & GROUP CONFIGS
+// ==============================
+
+// @desc    Create a new community
+// @route   POST /api/admin/communities
+// @access  Admin
+const createCommunity = async (req, res) => {
+    try {
+        const { name, description, avatar } = req.body;
+        const community = await Community.create({
+            name,
+            description,
+            avatar,
+            creator: req.user._id
+        });
+        res.status(201).json(community);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Get all communities
+// @route   GET /api/admin/communities
+// @access  Admin/Private
+const getCommunities = async (req, res) => {
+    try {
+        const communities = await Community.find().populate('groups', 'name avatar members count');
+        res.json(communities);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Create/Update group configuration (dynamic types)
+// @route   POST /api/admin/group-configs
+// @access  Admin
+const updateGroupConfig = async (req, res) => {
+    try {
+        const { groupType, metadataRequirements, questions } = req.body;
+        let config = await GroupConfig.findOne({ groupType });
+
+        if (config) {
+            config.metadataRequirements = metadataRequirements;
+            config.questions = questions;
+            await config.save();
+        } else {
+            config = await GroupConfig.create({ groupType, metadataRequirements, questions });
+        }
         res.json(config);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Get all project pitches for management
-// @route   GET /api/admin/pitches
-// @access  Admin
-const getPitchesAdmin = async (req, res) => {
+// @desc    Get all group configurations
+// @route   GET /api/admin/group-configs
+// @access  Admin/Private
+const getGroupConfigs = async (req, res) => {
     try {
-        const pitches = await Request.find({ isPublic: true })
-            .populate('sender', 'name username')
-            .sort({ createdAt: -1 });
-        res.json(pitches);
+        const configs = await GroupConfig.find();
+        res.json(configs);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Delete a project pitch (Admin)
-// @route   DELETE /api/admin/pitches/:id
+// @desc    Add official group to community
+// @route   POST /api/admin/communities/:id/groups
 // @access  Admin
-const deletePitchAdmin = async (req, res) => {
+const addOfficialGroup = async (req, res) => {
     try {
-        const pitch = await Request.findById(req.params.id);
-        if (!pitch) {
-            return res.status(404).json({ message: 'Pitch not found' });
+        const { name, description, avatar, groupType, metadata, moderators } = req.body;
+        const community = await Community.findById(req.params.id);
+
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        const group = await GroupChat.create({
+            name,
+            description,
+            avatar,
+            groupType,
+            metadata,
+            moderators,
+            communityId: community._id,
+            isOfficial: true,
+            creator: req.user._id,
+            members: [req.user._id, ...(moderators || [])]
+        });
+
+        community.groups.push(group._id);
+        await community.save();
+
+        res.status(201).json(group);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Assign moderator to group
+// @route   PUT /api/admin/groups/:id/moderators
+// @access  Admin
+const assignModerator = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const group = await GroupChat.findById(req.params.id);
+
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        if (!group.moderators.includes(userId)) {
+            group.moderators.push(userId);
+            if (!group.members.includes(userId)) group.members.push(userId);
+            await group.save();
         }
 
-        // Delete the pitch
-        await Request.findByIdAndDelete(req.params.id);
-
-        // Optional: Clean up related pitch_claims
-        await Request.deleteMany({ pitchRef: req.params.id, type: 'pitch_claim' });
-
-        res.json({ message: 'Pitch and related claims removed successfully' });
+        res.json(group);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
@@ -718,5 +846,11 @@ module.exports = {
     getPitchConfig,
     updatePitchConfig,
     getPitchesAdmin,
-    deletePitchAdmin
+    deletePitchAdmin,
+    createCommunity,
+    getCommunities,
+    updateGroupConfig,
+    getGroupConfigs,
+    addOfficialGroup,
+    assignModerator
 };

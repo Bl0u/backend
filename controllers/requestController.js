@@ -58,12 +58,46 @@ const sendRequest = async (req, res) => {
 // @access  Private
 const getReceivedRequests = async (req, res) => {
     try {
-        const requests = await Request.find({ receiver: req.user.id })
+        const userId = req.user.id;
+        const isAdmin = req.user.role === 'admin';
+
+        // 1. Direct requests where user is the receiver
+        const directQuery = { receiver: userId };
+
+        // 2. Community join requests where user is a moderator or admin
+        // First find groups where user is mod
+        const modGroups = await GroupChat.find({ moderators: userId }).select('_id');
+        const modGroupIds = modGroups.map(g => g._id);
+
+        const communityJoinQuery = {
+            type: 'community_join',
+            $or: [
+                { groupChat: { $in: modGroupIds } }
+            ]
+        };
+
+        // If admin, they see all community joins? Or maybe just those they moderate?
+        // User said: "request is sent to the author of the group (admin in this case) and moderators assigned by the admin"
+        // Let's also include those where they are the creator of the group
+        const createdGroups = await GroupChat.find({ creator: userId }).select('_id');
+        const createdGroupIds = createdGroups.map(g => g._id);
+
+        communityJoinQuery.$or.push({ groupChat: { $in: createdGroupIds } });
+
+        const requests = await Request.find({
+            $or: [
+                directQuery,
+                communityJoinQuery
+            ]
+        })
             .populate('sender', 'name username role profilePicture')
+            .populate('groupChat', 'name avatar')
             .populate('pitchRef')
             .sort({ createdAt: -1 });
+
         res.json(requests);
     } catch (error) {
+        console.error('getReceivedRequests error:', error);
         res.status(500).json({ message: 'Server Error' });
     }
 };

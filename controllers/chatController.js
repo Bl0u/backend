@@ -1,6 +1,7 @@
 const Message = require('../models/Message');
 const User = require('../models/User');
 const GroupChat = require('../models/GroupChat');
+const Request = require('../models/Request');
 
 // @desc    Get recent chats (both 1-1 and groups)
 // @route   GET /api/chat/recent
@@ -225,11 +226,91 @@ const getUnreadCount = async (req, res) => {
     }
 };
 
+// @desc    Request to join an official group
+// @route   POST /api/chat/groups/:id/join
+// @access  Private
+const requestJoinGroup = async (req, res) => {
+    try {
+        const { answers } = req.body;
+        const group = await GroupChat.findById(req.params.id);
+
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+        if (!group.isOfficial) return res.status(400).json({ message: 'Not an official group' });
+
+        // Check if already a member
+        if (group.members.includes(req.user.id)) {
+            return res.status(400).json({ message: 'Already a member' });
+        }
+
+        // Check for existing pending request
+        const existingRequest = await Request.findOne({
+            sender: req.user.id,
+            groupChat: group._id,
+            status: 'pending'
+        });
+
+        if (existingRequest) {
+            return res.status(400).json({ message: 'Join request already pending' });
+        }
+
+        const request = await Request.create({
+            sender: req.user.id,
+            type: 'community_join',
+            groupChat: group._id,
+            answers,
+            status: 'pending'
+        });
+
+        res.status(201).json({ message: 'Join request sent', request });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// @desc    Accept/Reject join request
+// @route   PUT /api/chat/requests/:id
+// @access  Private (Admin/Moderator)
+const handleJoinRequest = async (req, res) => {
+    try {
+        const { status } = req.body; // 'accepted' or 'rejected'
+        const request = await Request.findById(req.params.id).populate('groupChat');
+
+        if (!request) return res.status(404).json({ message: 'Request not found' });
+
+        const group = await GroupChat.findById(request.groupChat._id);
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        // Authorization: Admin or Group Moderator
+        const isMod = group.moderators.includes(req.user.id);
+        const isAdmin = req.user.role === 'admin';
+
+        if (!isAdmin && !isMod) {
+            return res.status(403).json({ message: 'Unauthorized' });
+        }
+
+        request.status = status;
+        await request.save();
+
+        if (status === 'accepted') {
+            if (!group.members.includes(request.sender)) {
+                group.members.push(request.sender);
+                await group.save();
+            }
+        }
+
+        res.json({ message: `Request ${status}`, request });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 module.exports = {
     getRecentChats,
     getMessages,
     sendMessage,
     createGroupChat,
     addMemberToGroup,
-    getUnreadCount
+    getUnreadCount,
+    requestJoinGroup,
+    handleJoinRequest
 };

@@ -13,13 +13,21 @@ const requestSchema = mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim'],
+        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim', 'community_join'],
         required: true
     },
     status: {
         type: String,
         enum: ['pending', 'accepted', 'rejected', 'completed', 'ongoing'],
         default: 'pending'
+    },
+    groupChat: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'GroupChat'
+    },
+    answers: {
+        type: Map,
+        of: String
     },
     pitchRef: {
         type: mongoose.Schema.Types.ObjectId,
