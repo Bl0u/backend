@@ -1,5 +1,6 @@
 const Request = require('../models/Request');
 const User = require('../models/User');
+const GroupChat = require('../models/GroupChat');
 
 // @desc    Send a request (Mentorship or Partner)
 // @route   POST /api/requests
@@ -40,9 +41,12 @@ const sendRequest = async (req, res) => {
     const request = await Request.create({
         sender: req.user.id,
         receiver: isPublic ? undefined : receiverId,
-        type: 'partner', // Default to partner
+        type: type || 'partner',
         message,
         pitch,
+        groupChat: req.body.groupChat,
+        answers: req.body.answers,
+        pitchRef: req.body.pitchRef,
         isPublic: !!isPublic,
         teamSize: teamSize || 1,
         mentorNeeded: !!mentorNeeded,
@@ -462,12 +466,38 @@ const respondToRequest = async (req, res) => {
                 console.error('Plan creation error in acceptance:', error);
             }
         }
+    } else if (status === 'accepted' && request.type === 'community_join') {
+        try {
+            const GroupChat = require('../models/GroupChat'); // Assuming GroupChat model is available
+            const group = await GroupChat.findById(request.groupChat);
+            if (group) {
+                if (!group.members.includes(request.sender)) {
+                    group.members.push(request.sender);
+                    await group.save();
+                }
+
+                await Request.create({
+                    sender: req.user.id,
+                    receiver: request.sender,
+                    type: 'notification',
+                    message: `You have been accepted into the group "${group.name}"! 🚀 Check your chat box.`,
+                    status: 'accepted',
+                    isPublic: false
+                });
+            }
+        } catch (error) {
+            console.error('Community Hub Error:', error);
+        }
     } else if (status === 'rejected') {
+        const message = request.type === 'community_join'
+            ? `Your request to join the group was declined.`
+            : `Your partnership request was declined. You may try again later.`;
+
         await Request.create({
             sender: req.user.id,
             receiver: request.sender,
             type: 'notification',
-            message: `Your partnership request was declined. You may try again later.`,
+            message,
             status: 'rejected',
             isPublic: false
         });
