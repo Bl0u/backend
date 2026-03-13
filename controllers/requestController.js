@@ -460,8 +460,7 @@ const respondToRequest = async (req, res) => {
     if (status === 'accepted') {
         const sender = await User.findById(request.sender);
         const receiver = await User.findById(req.user.id);
-
-        if (sender && receiver) {
+        if (sender && receiver && request.type === 'partnership') {
             const activePartner = receiver.enrolledPartners.find(p => p.user.toString() === sender._id.toString() && p.status === 'active');
             if (!activePartner) {
                 receiver.enrolledPartners.push({ user: sender._id, status: 'active' });
@@ -520,7 +519,10 @@ const respondToRequest = async (req, res) => {
                 console.error('Plan creation error in acceptance:', error);
             }
         }
-    } else if (status === 'accepted' && request.type === 'community_join') {
+    }
+
+    // Community Join Specific Logic
+    if (status === 'accepted' && request.type === 'community_join') {
         try {
             if (request.groupChat) {
                 const group = await GroupChat.findById(request.groupChat);
@@ -552,14 +554,14 @@ const respondToRequest = async (req, res) => {
                         sender: req.user.id,
                         receiver: request.sender,
                         type: 'notification',
-                        message: `You have been accepted into the community "${community.name}"! 🏛️ You can now access all public circles.`,
+                        message: `You have been accepted into the community "${community.name}"! 🚀`,
                         status: 'accepted',
                         isPublic: false
                     });
                 }
             }
         } catch (error) {
-            console.error('Community Hub Error:', error);
+            console.error('Community join acceptance error:', error);
         }
     } else if (status === 'rejected') {
         const message = request.type === 'community_join'

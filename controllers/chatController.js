@@ -253,6 +253,29 @@ const requestJoinGroup = async (req, res) => {
             return res.status(400).json({ message: 'Join request already pending' });
         }
 
+        // PUBLIC JOIN: Instant
+        if (group.privacyType === 'public') {
+            if (!group.members.includes(req.user.id)) {
+                group.members.push(req.user.id);
+                await group.save();
+            }
+
+            // In-chat notification (System message)
+            await Message.create({
+                groupChat: group._id,
+                sender: req.user.id, // Or a system bot user if implemented
+                content: `👋 ${req.user.name} has joined the unit.`,
+                isAnnouncement: true // Use announcement style for visibility
+            });
+
+            return res.status(200).json({ 
+                message: 'Joined group successfully', 
+                status: 'joined',
+                groupId: group._id 
+            });
+        }
+
+        // PRIVATE JOIN: Create request
         const request = await Request.create({
             sender: req.user.id,
             type: 'community_join',
@@ -261,8 +284,9 @@ const requestJoinGroup = async (req, res) => {
             status: 'pending'
         });
 
-        res.status(201).json({ message: 'Join request sent', request });
+        res.status(201).json({ message: 'Join request sent', request, status: 'pending' });
     } catch (error) {
+        console.error('requestJoinGroup error:', error);
         res.status(500).json({ message: 'Server Error' });
     }
 };
