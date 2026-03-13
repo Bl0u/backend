@@ -38,9 +38,28 @@ const sendRequest = async (req, res) => {
         }
     }
 
+    // Resolve receiver for community_join requests if not provided
+    let finalReceiverId = receiverId;
+    if (type === 'community_join' && !finalReceiverId) {
+        if (req.body.groupChat) {
+            const group = await GroupChat.findById(req.body.groupChat);
+            finalReceiverId = group?.creator || group?.moderators?.[0];
+        } else if (req.body.community) {
+            const Community = require('../models/Community');
+            const community = await Community.findById(req.body.community);
+            finalReceiverId = community?.creator;
+        }
+
+        // Final fallback: Find an admin
+        if (!finalReceiverId) {
+            const admin = await User.findOne({ roles: 'admin' });
+            finalReceiverId = admin?._id;
+        }
+    }
+
     const request = await Request.create({
         sender: req.user.id,
-        receiver: isPublic ? undefined : receiverId,
+        receiver: isPublic ? undefined : (finalReceiverId || receiverId),
         type: type || 'partner',
         message,
         pitch,
@@ -470,7 +489,6 @@ const respondToRequest = async (req, res) => {
     } else if (status === 'accepted' && request.type === 'community_join') {
         try {
             if (request.groupChat) {
-                const GroupChat = require('../models/GroupChat');
                 const group = await GroupChat.findById(request.groupChat);
                 if (group) {
                     if (!group.members.includes(request.sender)) {

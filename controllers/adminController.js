@@ -896,6 +896,21 @@ const removeGroupFromCommunity = async (req, res) => {
     }
 };
 
+// @desc    Delete a group configuration (dynamic type)
+// @route   DELETE /api/admin/group-configs/:id
+// @access  Admin
+const deleteGroupConfig = async (req, res) => {
+    try {
+        const config = await GroupConfig.findById(req.params.id);
+        if (!config) return res.status(404).json({ message: 'Configuration not found' });
+
+        await GroupConfig.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Group type configuration deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -922,6 +937,7 @@ module.exports = {
     removeGroupFromCommunity,
     updateGroupConfig,
     getGroupConfigs,
+    deleteGroupConfig,
     addOfficialGroup,
     assignModerator
 };
