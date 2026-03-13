@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect, adminOnly, moderatorOnly } = require('../middleware/authMiddleware');
 const {
     getStats,
     getUsers,
@@ -30,6 +30,8 @@ const {
     assignModerator,
     assignCommunityModerator,
     deleteCommunity,
+    updateCommunity,
+    updateGroup,
     removeGroupFromCommunity,
     generateBaseCommunities
 } = require('../controllers/adminController');
@@ -40,6 +42,11 @@ router.get('/pitch-config', protect, getPitchConfig);
 // Public/Semi-public getters for communities and configs
 router.get('/communities', protect, getCommunities);
 router.get('/group-configs', protect, getGroupConfigs);
+
+// Allow moderators to toggle privacy
+router.put('/communities/:id', protect, moderatorOnly, updateCommunity);
+router.put('/communities/groups/:id', protect, moderatorOnly, updateGroup);
+
 
 // All routes below require protect + adminOnly
 router.use(protect, adminOnly);

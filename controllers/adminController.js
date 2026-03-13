@@ -1022,6 +1022,52 @@ const deleteGroupConfig = async (req, res) => {
     }
 };
 
+// @desc    Update a community (privacy toggle, name, etc.)
+// @route   PUT /api/admin/communities/:id
+// @access  Admin/Moderator
+const updateCommunity = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, avatar, privacyType } = req.body;
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        if (name) community.name = name;
+        if (description) community.description = description;
+        if (avatar) community.avatar = avatar;
+        if (privacyType) community.privacyType = privacyType;
+
+        await community.save();
+        res.json({ message: 'Community updated successfully', community });
+    } catch (error) {
+        console.error('Update community error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Update a group (privacy toggle, etc.)
+// @route   PUT /api/admin/communities/groups/:id
+// @access  Admin/Moderator
+const updateGroup = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { privacyType, name } = req.body;
+
+        const group = await GroupChat.findById(id);
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        if (privacyType) group.privacyType = privacyType;
+        if (name) group.name = name;
+
+        await group.save();
+        res.json({ message: 'Group updated successfully', group });
+    } catch (error) {
+        console.error('Update group error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -1052,5 +1098,7 @@ module.exports = {
     addOfficialGroup,
     assignModerator,
     assignCommunityModerator,
+    updateCommunity,
+    updateGroup,
     generateBaseCommunities
 };
