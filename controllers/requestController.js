@@ -90,13 +90,26 @@ const getReceivedRequests = async (req, res) => {
 
         // 2. Community join requests where user is a moderator or admin
         // First find groups where user is mod
-        const modGroups = await GroupChat.find({ moderators: userId }).select('_id');
-        const modGroupIds = modGroups.map(g => g._id);
+        const modGroups = await GroupChat.find({ moderators: userId }).select('_id communityId');
+        
+        // Find communities where user is a moderator
+        const Community = require('../models/Community');
+        const modCommunities = await Community.find({ moderators: userId }).select('_id');
+        const modCommunityIds = modCommunities.map(c => c._id);
+
+        // Find all groups belonging to those communities
+        const inheritedGroups = await GroupChat.find({ communityId: { $in: modCommunityIds } }).select('_id');
+        
+        const allModGroupIds = [...new Set([
+            ...modGroups.map(g => g._id),
+            ...inheritedGroups.map(g => g._id)
+        ])];
 
         const communityJoinQuery = {
             type: 'community_join',
             $or: [
-                { groupChat: { $in: modGroupIds } }
+                { groupChat: { $in: allModGroupIds } },
+                { community: { $in: modCommunityIds } }
             ]
         };
 
@@ -115,7 +128,7 @@ const getReceivedRequests = async (req, res) => {
             ]
         })
             .populate('sender', 'name username role profilePicture')
-            .populate('groupChat', 'name avatar')
+            .populate('groupChat', 'name avatar communityId')
             .populate('pitchRef')
             .sort({ createdAt: -1 });
 
@@ -416,7 +429,28 @@ const respondToRequest = async (req, res) => {
         return res.status(404).json({ message: 'Request not found' });
     }
 
-    if (request.receiver.toString() !== req.user.id) {
+    // AUTH CHECK: Direct receiver OR moderator (for community joins)
+    let isAuthorized = request.receiver.toString() === req.user.id;
+
+    if (!isAuthorized && request.type === 'community_join') {
+        // Check if user is a moderator of the group or community
+        if (request.groupChat) {
+            const group = await GroupChat.findById(request.groupChat);
+            if (group) {
+                const isGroupMod = group.moderators.includes(req.user.id);
+                const Community = require('../models/Community');
+                const community = await Community.findById(group.communityId);
+                const isCommMod = community?.moderators.includes(req.user.id);
+                if (isGroupMod || isCommMod) isAuthorized = true;
+            }
+        } else if (request.community) {
+            const Community = require('../models/Community');
+            const community = await Community.findById(request.community);
+            if (community?.moderators.includes(req.user.id)) isAuthorized = true;
+        }
+    }
+
+    if (!isAuthorized) {
         return res.status(401).json({ message: 'Not authorized' });
     }
 

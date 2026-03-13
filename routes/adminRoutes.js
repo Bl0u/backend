@@ -28,6 +28,7 @@ const {
     deleteGroupConfig,
     addOfficialGroup,
     assignModerator,
+    assignCommunityModerator,
     deleteCommunity,
     removeGroupFromCommunity
 } = require('../controllers/adminController');
@@ -80,6 +81,7 @@ router.post('/communities', createCommunity);
 router.post('/group-configs', updateGroupConfig);
 router.delete('/group-configs/:id', deleteGroupConfig);
 router.post('/communities/:id/groups', addOfficialGroup);
+router.put('/communities/:id/moderators', assignCommunityModerator);
 router.delete('/communities/:id', deleteCommunity);
 router.delete('/communities/:id/groups/:groupId', removeGroupFromCommunity);
 router.put('/groups/:id/moderators', assignModerator);

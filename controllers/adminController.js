@@ -752,7 +752,9 @@ const createCommunity = async (req, res) => {
 // @access  Admin/Private
 const getCommunities = async (req, res) => {
     try {
-        const communities = await Community.find().populate('groups', 'name avatar members count');
+        const communities = await Community.find()
+            .populate('groups', 'name avatar members count moderators')
+            .populate('moderators', 'name username');
         res.json(communities);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
@@ -842,7 +844,43 @@ const assignModerator = async (req, res) => {
             await group.save();
         }
 
+        // Ensure user has 'moderator' role site-wide
+        const user = await User.findById(userId);
+        if (user && !user.roles.includes('moderator')) {
+            user.roles.push('moderator');
+            await user.save();
+        }
+
         res.json(group);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Assign regular user as community moderator
+// @route   PUT /api/admin/communities/:id/moderators
+// @access  Admin
+const assignCommunityModerator = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const community = await Community.findById(req.params.id);
+
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        if (!community.moderators.includes(userId)) {
+            community.moderators.push(userId);
+            if (!community.members.includes(userId)) community.members.push(userId);
+            await community.save();
+        }
+
+        // Ensure user has 'moderator' site-wide
+        const user = await User.findById(userId);
+        if (user && !user.roles.includes('moderator')) {
+            user.roles.push('moderator');
+            await user.save();
+        }
+
+        res.json(community);
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
@@ -939,5 +977,6 @@ module.exports = {
     getGroupConfigs,
     deleteGroupConfig,
     addOfficialGroup,
-    assignModerator
+    assignModerator,
+    assignCommunityModerator
 };
