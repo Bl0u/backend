@@ -127,11 +127,14 @@ const getUsers = async (req, res) => {
 // @access  Admin
 const promoteUser = async (req, res) => {
     try {
-        const { role, university, college, academicLevel } = req.body;
-        const validRoles = ['student', 'admin', 'mentor', 'studentLead'];
+        const { role, roles, university, college, academicLevel } = req.body;
+        const validRoles = ['student', 'admin', 'mentor', 'studentLead', 'moderator'];
 
-        if (!validRoles.includes(role)) {
+        if (role && !validRoles.includes(role)) {
             return res.status(400).json({ message: 'Invalid role' });
+        }
+        if (roles && (!Array.isArray(roles) || !roles.every(r => validRoles.includes(r)))) {
+            return res.status(400).json({ message: 'Invalid roles array' });
         }
 
         const user = await User.findById(req.params.id);
@@ -139,12 +142,28 @@ const promoteUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Safety: Prevent self-demotion from admin
-        if (user._id.toString() === req.user._id.toString() && role !== 'admin') {
-            return res.status(403).json({ message: 'You cannot demote yourself from admin role' });
+        if (roles && Array.isArray(roles)) {
+            // Bulk update roles
+            user.roles = roles;
+        } else if (role) {
+            // Legacy toggle behavior
+            if (!user.roles.includes(role)) {
+                user.roles.push(role);
+            } else {
+                user.roles = user.roles.filter(r => r !== role);
+            }
         }
-
-        user.role = role;
+        
+        // Ensure at least 'student' remains
+        if (user.roles.length === 0) user.roles = ['student'];
+        
+        // Ensure Admin safety
+        const isAdmin = req.user.roles.includes('admin');
+        if (user._id.toString() === req.user._id.toString() && !user.roles.includes('admin')) {
+             // Re-add admin if they tried to remove themselves and it was their only role or something?
+             // Actually let's just block it.
+             return res.status(403).json({ message: 'You cannot remove your own admin status' });
+        }
 
         // Targeted fields for studentLead/mentor
         if (role === 'studentLead') {
@@ -156,11 +175,11 @@ const promoteUser = async (req, res) => {
         await user.save();
 
         res.json({
-            message: `User promoted to ${role} successfully`,
+            message: `User roles updated successfully`,
             user: {
                 _id: user._id,
                 name: user.name,
-                role: user.role,
+                roles: user.roles,
                 university: user.university,
                 college: user.college,
                 academicLevel: user.academicLevel
@@ -231,7 +250,7 @@ const deleteUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        if (user.role === 'admin') {
+        if (user.roles.includes('admin')) {
             return res.status(400).json({ message: 'Cannot delete an admin account' });
         }
 
@@ -279,7 +298,7 @@ const toggleBan = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        if (user.role === 'admin') {
+        if (user.roles.includes('admin')) {
             return res.status(400).json({ message: 'Cannot ban an admin account' });
         }
 
@@ -575,7 +594,7 @@ const resetDatabase = async (req, res) => {
 
         // Delete everything except admin users
         const results = await Promise.all([
-            User.deleteMany({ role: { $ne: 'admin' } }),
+            User.deleteMany({ roles: { $ne: 'admin' } }),
             Thread.deleteMany({}),
             Post.deleteMany({}),
             Message.deleteMany({}),
@@ -601,7 +620,7 @@ const resetDatabase = async (req, res) => {
         }));
 
         // Reset admin stars to default
-        await User.updateMany({ role: 'admin' }, {
+        await User.updateMany({ roles: 'admin' }, {
             $set: {
                 purchasedThreads: [],
                 pinnedThreads: [],
@@ -714,11 +733,12 @@ const deletePitchAdmin = async (req, res) => {
 // @access  Admin
 const createCommunity = async (req, res) => {
     try {
-        const { name, description, avatar } = req.body;
+        const { name, description, avatar, privacyType } = req.body;
         const community = await Community.create({
             name,
             description,
             avatar,
+            privacyType: privacyType || 'public',
             creator: req.user._id
         });
         res.status(201).json(community);
@@ -777,7 +797,7 @@ const getGroupConfigs = async (req, res) => {
 // @access  Admin
 const addOfficialGroup = async (req, res) => {
     try {
-        const { name, description, avatar, groupType, metadata, moderators } = req.body;
+        const { name, description, avatar, groupType, metadata, moderators, privacyType } = req.body;
         const community = await Community.findById(req.params.id);
 
         if (!community) return res.status(404).json({ message: 'Community not found' });
@@ -791,6 +811,7 @@ const addOfficialGroup = async (req, res) => {
             moderators,
             communityId: community._id,
             isOfficial: true,
+            privacyType: privacyType || 'public',
             creator: req.user._id,
             members: [req.user._id, ...(moderators || [])]
         });
@@ -827,6 +848,54 @@ const assignModerator = async (req, res) => {
     }
 };
 
+// @desc    Delete a community and all its groups + messages
+// @route   DELETE /api/admin/communities/:id
+// @access  Admin
+const deleteCommunity = async (req, res) => {
+    try {
+        const community = await Community.findById(req.params.id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        // Delete all messages in all groups belonging to this community
+        const groupIds = community.groups || [];
+        if (groupIds.length > 0) {
+            await Message.deleteMany({ groupChat: { $in: groupIds } });
+            await GroupChat.deleteMany({ _id: { $in: groupIds } });
+        }
+
+        await Community.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Community and all nested groups deleted successfully' });
+    } catch (error) {
+        console.error('Delete community error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Remove a specific group from a community
+// @route   DELETE /api/admin/communities/:id/groups/:groupId
+// @access  Admin
+const removeGroupFromCommunity = async (req, res) => {
+    try {
+        const { id, groupId } = req.params;
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        // Remove group ref from community
+        community.groups = community.groups.filter(g => g.toString() !== groupId);
+        await community.save();
+
+        // Delete the group's messages and the group itself
+        await Message.deleteMany({ groupChat: groupId });
+        await GroupChat.findByIdAndDelete(groupId);
+
+        res.json({ message: 'Group removed from community successfully' });
+    } catch (error) {
+        console.error('Remove group error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -849,6 +918,8 @@ module.exports = {
     deletePitchAdmin,
     createCommunity,
     getCommunities,
+    deleteCommunity,
+    removeGroupFromCommunity,
     updateGroupConfig,
     getGroupConfigs,
     addOfficialGroup,

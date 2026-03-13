@@ -5,7 +5,9 @@ const communitySchema = mongoose.Schema({
     description: { type: String },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
     groups: [{ type: mongoose.Schema.Types.ObjectId, ref: 'GroupChat' }],
-    creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User' } // Usually admin
+    members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Usually admin
+    privacyType: { type: String, enum: ['public', 'private'], default: 'public' }
 }, {
     timestamps: true
 });

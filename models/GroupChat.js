@@ -14,6 +14,7 @@ const groupChatSchema = mongoose.Schema({
     communityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
     isOfficial: { type: Boolean, default: false },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
+    privacyType: { type: String, enum: ['public', 'private'], default: 'public' },
 
     // Metadata for official groups (University, School, etc.)
     metadata: {

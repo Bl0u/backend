@@ -25,6 +25,10 @@ const requestSchema = mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'GroupChat'
     },
+    community: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Community'
+    },
     answers: {
         type: Map,
         of: String

@@ -26,7 +26,9 @@ const {
     updateGroupConfig,
     getGroupConfigs,
     addOfficialGroup,
-    assignModerator
+    assignModerator,
+    deleteCommunity,
+    removeGroupFromCommunity
 } = require('../controllers/adminController');
 
 // Public config GET (still protected by session/token if desired, but not adminOnly)
@@ -76,6 +78,8 @@ router.delete('/pitches/:id', deletePitchAdmin);
 router.post('/communities', createCommunity);
 router.post('/group-configs', updateGroupConfig);
 router.post('/communities/:id/groups', addOfficialGroup);
+router.delete('/communities/:id', deleteCommunity);
+router.delete('/communities/:id/groups/:groupId', removeGroupFromCommunity);
 router.put('/groups/:id/moderators', assignModerator);
 
 // Database Reset (DANGER)

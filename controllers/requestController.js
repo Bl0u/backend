@@ -45,6 +45,7 @@ const sendRequest = async (req, res) => {
         message,
         pitch,
         groupChat: req.body.groupChat,
+        community: req.body.community,
         answers: req.body.answers,
         pitchRef: req.body.pitchRef,
         isPublic: !!isPublic,
@@ -63,7 +64,7 @@ const sendRequest = async (req, res) => {
 const getReceivedRequests = async (req, res) => {
     try {
         const userId = req.user.id;
-        const isAdmin = req.user.role === 'admin';
+        const isAdmin = req.user.roles.includes('admin');
 
         // 1. Direct requests where user is the receiver
         const directQuery = { receiver: userId };
@@ -156,7 +157,7 @@ const claimPublicPitch = async (req, res) => {
     const { role, roleName } = req.body; // 'teammate' or 'mentor', plus specific role name
     const claimingUser = await User.findById(req.user.id);
 
-    if (role === 'mentor' && claimingUser.role !== 'mentor') {
+    if (role === 'mentor' && !claimingUser.roles.includes('mentor')) {
         return res.status(403).json({ message: 'Only accounts with the "mentor" role can apply for mentor missions' });
     }
 
@@ -468,22 +469,42 @@ const respondToRequest = async (req, res) => {
         }
     } else if (status === 'accepted' && request.type === 'community_join') {
         try {
-            const GroupChat = require('../models/GroupChat'); // Assuming GroupChat model is available
-            const group = await GroupChat.findById(request.groupChat);
-            if (group) {
-                if (!group.members.includes(request.sender)) {
-                    group.members.push(request.sender);
-                    await group.save();
-                }
+            if (request.groupChat) {
+                const GroupChat = require('../models/GroupChat');
+                const group = await GroupChat.findById(request.groupChat);
+                if (group) {
+                    if (!group.members.includes(request.sender)) {
+                        group.members.push(request.sender);
+                        await group.save();
+                    }
 
-                await Request.create({
-                    sender: req.user.id,
-                    receiver: request.sender,
-                    type: 'notification',
-                    message: `You have been accepted into the group "${group.name}"! 🚀 Check your chat box.`,
-                    status: 'accepted',
-                    isPublic: false
-                });
+                    await Request.create({
+                        sender: req.user.id,
+                        receiver: request.sender,
+                        type: 'notification',
+                        message: `You have been accepted into the group "${group.name}"! 🚀 Check your chat box.`,
+                        status: 'accepted',
+                        isPublic: false
+                    });
+                }
+            } else if (request.community) {
+                const Community = require('../models/Community');
+                const community = await Community.findById(request.community);
+                if (community) {
+                    if (!community.members.includes(request.sender)) {
+                        community.members.push(request.sender);
+                        await community.save();
+                    }
+
+                    await Request.create({
+                        sender: req.user.id,
+                        receiver: request.sender,
+                        type: 'notification',
+                        message: `You have been accepted into the community "${community.name}"! 🏛️ You can now access all public circles.`,
+                        status: 'accepted',
+                        isPublic: false
+                    });
+                }
             }
         } catch (error) {
             console.error('Community Hub Error:', error);

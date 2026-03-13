@@ -6,7 +6,7 @@ const GroupChat = require('../models/GroupChat');
 // Utility to ensure lead/mentor is in their respective elite network
 const ensureEliteNetworks = async (user) => {
     try {
-        if (user.role === 'studentLead') {
+        if (user.roles.includes('studentLead')) {
             const groupName = 'Student Lead Private Network';
             let group = await GroupChat.findOne({ name: groupName, groupType: 'elite' });
             if (!group) {
@@ -21,7 +21,8 @@ const ensureEliteNetworks = async (user) => {
                 group.members.push(user._id);
                 await group.save();
             }
-        } else if (user.role === 'mentor') {
+        }
+        if (user.roles.includes('mentor')) {
             const groupName = 'Mentor Private Network';
             let group = await GroupChat.findOne({ name: groupName, groupType: 'elite' });
             if (!group) {
@@ -97,7 +98,7 @@ const registerUser = async (req, res) => {
         username,
         email,
         password: hashedPassword,
-        role: role || 'student',
+        roles: role ? [role] : ['student'],
         ...cleanedRest
     };
 
@@ -110,7 +111,7 @@ const registerUser = async (req, res) => {
             name: user.name,
             username: user.username,
             email: user.email,
-            role: user.role,
+            roles: user.roles,
             stars: user.stars || 0,
             token: generateToken(user._id),
         });
@@ -146,7 +147,7 @@ const loginUser = async (req, res) => {
             name: user.name,
             username: user.username,
             email: user.email,
-            role: user.role,
+            roles: user.roles,
             stars: user.stars || 0,
             token: generateToken(user._id),
         });
