@@ -8,7 +8,8 @@ const communitySchema = mongoose.Schema({
     members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     creator: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // Usually admin
-    privacyType: { type: String, enum: ['public', 'private'], default: 'public' }
+    privacyType: { type: String, enum: ['public', 'private'], default: 'public' },
+    bannedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
     timestamps: true
 });

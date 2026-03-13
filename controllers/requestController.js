@@ -12,6 +12,25 @@ const sendRequest = async (req, res) => {
     const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono, roles } = req.body;
     const normalizedIsPublic = !!isPublic;
 
+    const communityId = req.body.community;
+    const groupChatId = req.body.groupChat;
+
+    // 0. Ban check
+    if (communityId || groupChatId) {
+        if (communityId) {
+            const community = await Community.findById(communityId);
+            if (community && community.bannedUsers?.includes(req.user.id)) {
+                return res.status(403).json({ message: 'You are banned from this community' });
+            }
+        }
+        if (groupChatId) {
+            const group = await GroupChat.findById(groupChatId);
+            if (group && group.bannedUsers?.includes(req.user.id)) {
+                return res.status(403).json({ message: 'You are banned from this circle' });
+            }
+        }
+    }
+
     // 1. Resolve receiver for community_join requests if not provided
     let finalReceiverId = receiverId;
     if (type === 'community_join') {

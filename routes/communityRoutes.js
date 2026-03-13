@@ -4,9 +4,18 @@ const Community = require('../models/Community');
 const GroupChat = require('../models/GroupChat');
 const { protect } = require('../middleware/authMiddleware');
 
+const {
+    getModeratedContent,
+    getJoinedContent,
+    getMembers,
+    toggleBan,
+    createCircle,
+    deleteCircle
+} = require('../controllers/communityController');
+
 // @desc    Get all communities
 // @route   GET /api/communities
-// @access  Public (or Protected if preferred)
+// @access  Public
 router.get('/', async (req, res) => {
     try {
         const communities = await Community.find({}).populate('creator', 'name username');
@@ -16,9 +25,15 @@ router.get('/', async (req, res) => {
     }
 });
 
+// @desc    Get moderated communities/groups
+router.get('/moderated', protect, getModeratedContent);
+
+// @desc    Get joined communities/groups
+router.get('/joined', protect, getJoinedContent);
+
 // @desc    Get a community and its circles
 // @route   GET /api/communities/:id
-// @access  Public (Private circles will be filtered or access-checked)
+// @access  Public
 router.get('/:id', async (req, res) => {
     try {
         const community = await Community.findById(req.params.id);
@@ -34,5 +49,12 @@ router.get('/:id', async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 });
+
+// Management Routes
+router.get('/:id/members', protect, getMembers);
+router.put('/:id/ban', protect, toggleBan);
+router.post('/:id/groups', protect, createCircle);
+router.delete('/groups/:groupId', protect, deleteCircle);
+router.get('/groups/:id/members', protect, getMembers);
 
 module.exports = router;

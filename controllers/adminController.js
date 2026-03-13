@@ -747,6 +747,79 @@ const createCommunity = async (req, res) => {
     }
 };
 
+// @desc    Generate base communities and circles (Setup)
+// @route   POST /api/admin/communities/generator
+// @access  Admin
+const generateBaseCommunities = async (req, res) => {
+    try {
+        const universities = [
+            'Cairo University', 
+            'Ain Shams University', 
+            'Alexandria University', 
+            'Mansoura University',
+            'Helwan University',
+            'Assiut University'
+        ];
+
+        const baseCircles = [
+            { name: 'Computer Science', type: 'Subject' },
+            { name: 'Engineering', type: 'Subject' },
+            { name: 'Medicine', type: 'Subject' },
+            { name: 'General Discussion', type: 'General' },
+            { name: 'Student Life', type: 'Social' }
+        ];
+
+        let createdCount = 0;
+        let circleCount = 0;
+
+        for (const uniName of universities) {
+            // Check if exists
+            let community = await Community.findOne({ name: uniName });
+            if (!community) {
+                community = await Community.create({
+                    name: uniName,
+                    description: `Official hub for ${uniName} students.`,
+                    creator: req.user._id,
+                    privacyType: 'public'
+                });
+                createdCount++;
+            }
+
+            // Create base circles for each uni
+            for (const circleDef of baseCircles) {
+                const groupName = `${uniName} - ${circleDef.name}`;
+                let group = await GroupChat.findOne({ name: groupName, communityId: community._id });
+                if (!group) {
+                    group = await GroupChat.create({
+                        name: groupName,
+                        description: `${circleDef.type} group for ${uniName}.`,
+                        groupType: circleDef.type.toLowerCase(),
+                        communityId: community._id,
+                        isOfficial: true,
+                        privacyType: 'public',
+                        creator: req.user._id,
+                        members: [req.user._id]
+                    });
+                    
+                    if (!community.groups.includes(group._id)) {
+                        community.groups.push(group._id);
+                    }
+                    circleCount++;
+                }
+            }
+            await community.save();
+        }
+
+        res.json({ 
+            message: 'Base communities generated successfully',
+            summary: `Created ${createdCount} communities and ${circleCount} circles.`
+        });
+    } catch (error) {
+        console.error('Generator error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // @desc    Get all communities
 // @route   GET /api/admin/communities
 // @access  Admin/Private
@@ -978,5 +1051,6 @@ module.exports = {
     deleteGroupConfig,
     addOfficialGroup,
     assignModerator,
-    assignCommunityModerator
+    assignCommunityModerator,
+    generateBaseCommunities
 };

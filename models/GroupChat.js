@@ -27,6 +27,7 @@ const groupChatSchema = mongoose.Schema({
 
     // Legacy support
     academicLevel: { type: String }, // For 'level' type groups (internal)
+    bannedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 }, {
     timestamps: true,
 });
