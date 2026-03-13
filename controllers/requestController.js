@@ -1,80 +1,113 @@
 const Request = require('../models/Request');
 const User = require('../models/User');
 const GroupChat = require('../models/GroupChat');
+const Community = require('../models/Community');
+const Message = require('../models/Message');
+const Plan = require('../models/Plan');
 
 // @desc    Send a request (Mentorship or Partner)
 // @route   POST /api/requests
 // @access  Private
 const sendRequest = async (req, res) => {
     const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono, roles } = req.body;
+    const normalizedIsPublic = !!isPublic;
 
-    if (!isPublic && req.user.id === receiverId) {
+    // 1. Resolve receiver for community_join requests if not provided
+    let finalReceiverId = receiverId;
+    if (type === 'community_join') {
+        try {
+            let target = null;
+            if (req.body.groupChat) {
+                target = await GroupChat.findById(req.body.groupChat);
+                if (target && target.privacyType === 'public') {
+                    // INSTANT JOIN GROUP
+                    if (!target.members.includes(req.user.id)) {
+                        target.members.push(req.user.id);
+                        await target.save();
+                    }
+                    await Message.create({
+                        groupChat: target._id,
+                        sender: req.user.id,
+                        content: `👋 ${req.user.name} has joined the unit.`,
+                        isAnnouncement: true
+                    });
+                    return res.status(200).json({ status: 'joined', message: 'Joined group instantly' });
+                }
+                finalReceiverId = target?.creator || target?.moderators?.[0];
+            } else if (req.body.community) {
+                target = await Community.findById(req.body.community);
+                if (target && target.privacyType === 'public') {
+                    // INSTANT JOIN COMMUNITY
+                    if (!target.members.includes(req.user.id)) {
+                        target.members.push(req.user.id);
+                        await target.save();
+                    }
+                    return res.status(200).json({ status: 'joined', message: 'Joined community instantly' });
+                }
+                finalReceiverId = target?.creator || target?.moderators?.[0];
+            }
+        } catch (error) {
+            console.error('Error resolving community join receiver:', error);
+        }
+    }
+
+    // 2. Final Fallback to Admin
+    if (!normalizedIsPublic && !finalReceiverId) {
+        const admin = await User.findOne({ roles: 'admin' });
+        finalReceiverId = admin?._id;
+    }
+
+    // 3. Global receiver check
+    const resolvedReceiverId = finalReceiverId;
+    if (!normalizedIsPublic && !resolvedReceiverId) {
+        console.error('Validation Error: No receiver resolved for request type:', type);
+        return res.status(400).json({ message: 'Receiver is required for this request' });
+    }
+
+    // 4. Auth & Duplicate checks
+    if (!normalizedIsPublic && req.user.id === resolvedReceiverId.toString()) {
         return res.status(400).json({ message: 'Cannot send request to yourself' });
     }
 
-    // prevent duplicate ACTIVE private requests (allow re-requesting after completion)
-    if (!isPublic && receiverId) {
+    if (!normalizedIsPublic) {
         const existingActiveRequest = await Request.findOne({
             $or: [
-                { sender: req.user.id, receiver: receiverId },
-                { sender: receiverId, receiver: req.user.id }
+                { sender: req.user.id, receiver: resolvedReceiverId },
+                { sender: resolvedReceiverId, receiver: req.user.id }
             ],
             type,
             status: { $in: ['pending', 'accepted'] }
         });
 
-        if (existingActiveRequest) {
-            return res.status(400).json({ message: 'An active request already exists for this user' });
-        }
-
-        // Also check if currently enrolled (active relationship)
-        const currentUser = await User.findById(req.user.id);
-        const isCurrentlyEnrolled = currentUser.enrolledPartners?.some(
-            entry => entry.user.toString() === receiverId && entry.status === 'active'
-        );
-
-        if (isCurrentlyEnrolled) {
-            return res.status(400).json({ message: `You already have an active partnership with this user` });
+        if (existingActiveRequest && type !== 'notification' && type !== 'review_alert') {
+            return res.status(400).json({ message: 'An active request already exists' });
         }
     }
 
-    // Resolve receiver for community_join requests if not provided
-    let finalReceiverId = receiverId;
-    if (type === 'community_join' && !finalReceiverId) {
-        if (req.body.groupChat) {
-            const group = await GroupChat.findById(req.body.groupChat);
-            finalReceiverId = group?.creator || group?.moderators?.[0];
-        } else if (req.body.community) {
-            const Community = require('../models/Community');
-            const community = await Community.findById(req.body.community);
-            finalReceiverId = community?.creator;
-        }
+    // 5. Create Request
+    try {
+        const request = await Request.create({
+            sender: req.user.id,
+            receiver: normalizedIsPublic ? undefined : resolvedReceiverId,
+            type: type || 'partner',
+            message,
+            pitch,
+            groupChat: req.body.groupChat,
+            community: req.body.community,
+            answers: req.body.answers,
+            pitchRef: req.body.pitchRef,
+            isPublic: normalizedIsPublic,
+            teamSize: teamSize || 1,
+            mentorNeeded: !!mentorNeeded,
+            isProBono: !!isProBono,
+            roles: roles || []
+        });
 
-        // Final fallback: Find an admin
-        if (!finalReceiverId) {
-            const admin = await User.findOne({ roles: 'admin' });
-            finalReceiverId = admin?._id;
-        }
+        res.status(201).json(request);
+    } catch (error) {
+        console.error('Request Creation Error:', error);
+        res.status(400).json({ message: error.message || 'Failed to create request' });
     }
-
-    const request = await Request.create({
-        sender: req.user.id,
-        receiver: isPublic ? undefined : (finalReceiverId || receiverId),
-        type: type || 'partner',
-        message,
-        pitch,
-        groupChat: req.body.groupChat,
-        community: req.body.community,
-        answers: req.body.answers,
-        pitchRef: req.body.pitchRef,
-        isPublic: !!isPublic,
-        teamSize: teamSize || 1,
-        mentorNeeded: !!mentorNeeded,
-        isProBono: !!isProBono,
-        roles: roles || []
-    });
-
-    res.status(201).json(request);
 };
 
 // @desc    Get received requests
