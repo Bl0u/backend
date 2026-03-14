@@ -43,9 +43,12 @@ router.get('/pitch-config', protect, getPitchConfig);
 router.get('/communities', protect, getCommunities);
 router.get('/group-configs', protect, getGroupConfigs);
 
-// Allow moderators to toggle privacy
+// Allow moderators to management (privacy, mods, nested circles)
 router.put('/communities/:id', protect, moderatorOnly, updateCommunity);
 router.put('/communities/groups/:id', protect, moderatorOnly, updateGroup);
+router.put('/communities/:id/moderators', protect, moderatorOnly, assignCommunityModerator);
+router.put('/groups/:id/moderators', protect, moderatorOnly, assignModerator);
+router.delete('/communities/:communityId/groups/:groupId', protect, moderatorOnly, removeGroupFromCommunity);
 
 
 // All routes below require protect + adminOnly
