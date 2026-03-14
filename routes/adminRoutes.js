@@ -33,7 +33,8 @@ const {
     updateCommunity,
     updateGroup,
     removeGroupFromCommunity,
-    generateBaseCommunities
+    generateBaseCommunities,
+    seedTestAccounts
 } = require('../controllers/adminController');
 
 // Public config GET (still protected by session/token if desired, but not adminOnly)
@@ -99,5 +100,8 @@ router.delete('/reset', resetDatabase);
 
 // Community Generator
 router.post('/communities/generator', generateBaseCommunities);
+
+// Database Seeder
+router.post('/seed', seedTestAccounts);
 
 module.exports = router;

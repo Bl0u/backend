@@ -1100,6 +1100,164 @@ const updateGroup = async (req, res) => {
     }
 };
 
+// @desc    Seed test personnel (a, b, c, d) with full profiles
+// @route   POST /api/admin/seed
+// @access  Admin
+const seedTestAccounts = async (req, res) => {
+    try {
+        const bcrypt = require('bcryptjs');
+        const salt = await bcrypt.genSalt(10);
+
+        const testUsers = [
+            {
+                username: 'a',
+                name: 'Alice Johnson',
+                email: 'a@example.com',
+                password: 'a',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alice',
+                gender: 'Female',
+                major: 'Computer Science',
+                academicLevel: 'Level 3',
+                university: 'Cairo University',
+                college: 'Faculty of Computers and AI',
+                bio: 'CS student passionate about AI and algorithms. Looking for a teammate for a robot navigation project.',
+                partnerType: 'project teammate',
+                matchingGoal: 'Build a production-ready AI agent',
+                topics: ['Machine Learning', 'Python', 'React'],
+                neededFromPartner: 'Strong mathematical background and clean coding habits.',
+                city: 'Cairo',
+                country: 'Egypt',
+                languages: ['English', 'Arabic'],
+                studyMode: 'Hybrid',
+                preferredTools: ['Visual Studio Code', 'GitHub', 'Linear'],
+                commitmentLevel: 'Heavy',
+                sessionsPerWeek: 4,
+                sessionLength: '2 Hours',
+                pace: 'Fast',
+                canOffer: 'Deep knowledge in PyTorch and UI/UX design.',
+                lookingForPartner: true,
+                stars: 500,
+                skills: ['Python', 'PyTorch', 'React', 'Tailwind'],
+                interests: ['Artificial Intelligence', 'Open Source', 'UI/UX']
+            },
+            {
+                username: 'b',
+                name: 'Bob Smith',
+                email: 'b@example.com',
+                password: 'b',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
+                gender: 'Male',
+                major: 'Software Engineering',
+                academicLevel: 'Level 4',
+                university: 'Ain Shams University',
+                college: 'Faculty of Engineering',
+                bio: 'Backend specialist with a focus on cloud computing and scalable architectures.',
+                partnerType: 'peer',
+                matchingGoal: 'Self-study Distributed Systems',
+                topics: ['Node.js', 'AWS', 'Docker'],
+                neededFromPartner: 'Consistency and a desire to learn complex backend concepts.',
+                city: 'Giza',
+                country: 'Egypt',
+                languages: ['English'],
+                studyMode: 'Online',
+                preferredTools: ['NeoVim', 'Docker Desktop', 'Notion'],
+                commitmentLevel: 'Balanced',
+                sessionsPerWeek: 3,
+                sessionLength: '1.5 Hours',
+                pace: 'Balanced',
+                canOffer: 'Guidance on AWS deployments and system design.',
+                lookingForPartner: true,
+                stars: 350,
+                skills: ['Go', 'Node.js', 'AWS', 'Kubernetes'],
+                interests: ['Cloud Architecture', 'Distributed Systems', 'DevOps']
+            },
+            {
+                username: 'c',
+                name: 'Charlie Brown',
+                email: 'c@example.com',
+                password: 'c',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie',
+                gender: 'Male',
+                major: 'Information Technology',
+                academicLevel: 'Level 2',
+                university: 'Alexandria University',
+                college: 'Higher Institute of Engineering and Technology',
+                bio: 'Cybersecurity enthusiast. I love CTFs and breaking things (legally!).',
+                partnerType: 'peer',
+                matchingGoal: 'Prepare for OSCP certification',
+                topics: ['Networking', 'Penetration Testing', 'Linux'],
+                neededFromPartner: 'Someone who enjoys problem solving and has basic Linux knowledge.',
+                city: 'Alexandria',
+                country: 'Egypt',
+                languages: ['English', 'Arabic', 'French'],
+                studyMode: 'In-person',
+                preferredTools: ['Kali Linux', 'Burp Suite', 'Obsidian'],
+                commitmentLevel: 'Heavy',
+                sessionsPerWeek: 5,
+                sessionLength: '3 Hours',
+                pace: 'Fast',
+                canOffer: 'Hands-on training with security tools and network scanning.',
+                lookingForPartner: true,
+                stars: 250,
+                skills: ['Nmap', 'Metasploit', 'Bash Scripting', 'C++'],
+                interests: ['Cybersecurity', 'Ethical Hacking', 'Networking']
+            },
+            {
+                username: 'd',
+                name: 'Diana Prince',
+                email: 'd@example.com',
+                password: 'd',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Diana',
+                gender: 'Female',
+                major: 'Data Science',
+                academicLevel: 'Graduated',
+                university: 'Helwan University',
+                college: 'Faculty of Science',
+                bio: 'Recent graduate. I turn complex data into understandable stories through visualization.',
+                partnerType: 'project teammate',
+                matchingGoal: 'Submit a paper to a data science conference',
+                topics: ['R', 'Tableau', 'Statistics'],
+                neededFromPartner: 'Research-oriented mindset and decent academic writing skills.',
+                city: 'Cairo',
+                country: 'Egypt',
+                languages: ['Arabic', 'English'],
+                studyMode: 'Hybrid',
+                preferredTools: ['Jupyter Notebook', 'Tableau Desktop', 'Zotero'],
+                commitmentLevel: 'Casual',
+                sessionsPerWeek: 2,
+                sessionLength: '1 Hour',
+                pace: 'Slow & deep',
+                canOffer: 'Advanced statistical analysis and data cleanup expertise.',
+                lookingForPartner: true,
+                stars: 1000,
+                skills: ['R', 'SQL', 'Tableau', 'Public Speaking'],
+                interests: ['Data Analytics', 'Statistics', 'Visual Storytelling']
+            }
+        ];
+
+        for (const userData of testUsers) {
+            const hashedPassword = await bcrypt.hash(userData.password, salt);
+            await User.findOneAndUpdate(
+                { username: userData.username },
+                { 
+                    ...userData, 
+                    password: hashedPassword 
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+        }
+
+        res.json({ message: 'Test personnel (a, b, c, d) seeded successfully with full profiles!' });
+    } catch (error) {
+        console.error('Seed test accounts error:', error);
+        res.status(500).json({ message: 'Server error during seeding' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -1115,6 +1273,7 @@ module.exports = {
     getRecruitment,
     updateRecruitment,
     resetDatabase,
+    seedTestAccounts, // EXPORTED
     promoteUser,
     getPitchConfig,
     updatePitchConfig,
