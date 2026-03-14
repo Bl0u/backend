@@ -116,7 +116,7 @@ const sendRequest = async (req, res) => {
             answers: req.body.answers,
             pitchRef: req.body.pitchRef,
             isPublic: normalizedIsPublic,
-            teamSize: teamSize || 1,
+            teamSize: roles ? roles.filter(r => r.roleType === 'teammate' || !r.roleType).length : (teamSize || 1),
             mentorNeeded: !!mentorNeeded,
             isProBono: !!isProBono,
             roles: roles || []
@@ -277,7 +277,7 @@ const claimPublicPitch = async (req, res) => {
 
 // Internal Helper: Handles the actual logic of adding a user to a pitch
 // Reused by claimPublicPitch (Standard) and approvePitchClaim (Pro-Bono)
-const handlePitchEnrollment = async (request, user, role, res) => {
+const handlePitchEnrollment = async (request, user, role, roleName, res) => {
     // Update Project Status & Contributors
     if (role === 'mentor') {
         if (!request.mentorNeeded) {
@@ -287,32 +287,76 @@ const handlePitchEnrollment = async (request, user, role, res) => {
             return res.status(400).json({ message: 'The mentor spot is already filled' });
         }
         request.mentor = user._id;
-    } else {
-        // Default to teammate
-        if (request.contributors.includes(user._id)) {
-            return res.status(400).json({ message: 'User has already joined this mission' });
-        }
-        if (request.contributors.length >= (request.teamSize || 1)) {
-            return res.status(400).json({ message: 'All teammate slots are already filled' });
-        }
-        request.contributors.push(user._id);
 
-        // SYNC: Find and fill the specific role in the roles array
+        // SYNC: Find and fill the mentor role in the roles array if it exists
         if (request.roles && request.roles.length > 0) {
-            const specificRole = request.roles.find(r => r.name === role && !r.isFilled);
+            const specificRole = request.roles.find(r =>
+                (r.roleType === 'mentor' || (roleName && r.name === roleName)) && !r.isFilled
+            );
             if (specificRole) {
                 specificRole.isFilled = true;
                 specificRole.filledBy = user._id;
             }
         }
+    } else {
+        // Default to teammate
+        if (request.contributors.includes(user._id)) {
+            return res.status(400).json({ message: 'User has already joined this mission' });
+        }
+
+        // STAFFING CHECK: Use total teammate roles if defined, otherwise teamSize
+        let totalTeammateSlots = request.teamSize || 1;
+        if (request.roles && request.roles.length > 0) {
+            const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
+            if (teammateRoles.length > 0) {
+                totalTeammateSlots = teammateRoles.length;
+            }
+        }
+
+        if (request.contributors.length >= totalTeammateSlots) {
+            return res.status(400).json({ message: 'All teammate slots for this mission are already taken. Check back for other opportunities!' });
+        }
+
+        request.contributors.push(user._id);
+
+        // SYNC: Find and fill the specific role in the roles array
+        if (request.roles && request.roles.length > 0) {
+            // Priority 1: Match by roleName (exact or case-insensitive)
+            // Priority 2: Match by claimRole string if it was passed in 'role' argument
+            const targetRoleName = (roleName || role || '').toLowerCase();
+            const specificRole = request.roles.find(r => 
+                (r.name && r.name.toLowerCase() === targetRoleName) && !r.isFilled
+            );
+            if (specificRole) {
+                specificRole.isFilled = true;
+                specificRole.filledBy = user._id;
+            } else {
+                // Last ditch: just fill any teammate role that matches the roleType if name match fails
+                const fallbackRole = request.roles.find(r => 
+                    (r.roleType === 'teammate' || !r.roleType) && !r.isFilled
+                );
+                if (fallbackRole) {
+                    fallbackRole.isFilled = true;
+                    fallbackRole.filledBy = user._id;
+                }
+            }
+        }
     }
 
     // Check if mission is fully staffed
-    const isTeamFull = request.contributors.length >= (request.teamSize || 1);
+    let totalTeammateSlots = request.teamSize || 1;
+    if (request.roles && request.roles.length > 0) {
+        const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
+        if (teammateRoles.length > 0) {
+            totalTeammateSlots = teammateRoles.length;
+        }
+    }
+
+    const isTeamFull = request.contributors.length >= totalTeammateSlots;
     const isMentorFull = !request.mentorNeeded || !!request.mentor;
 
     if (isTeamFull && isMentorFull) {
-        request.status = 'ongoing'; // ACTIVE MISSION -> Moved from 'completed'
+        request.status = 'ongoing'; // ACTIVE MISSION
     } else {
         request.status = 'accepted'; // Partly Filled -> Keep in Hub
     }
@@ -324,7 +368,7 @@ const handlePitchEnrollment = async (request, user, role, res) => {
     }
 
     // Update progress percentage
-    const totalSlots = (request.teamSize || 1) + (request.mentorNeeded ? 1 : 0);
+    const totalSlots = totalTeammateSlots + (request.mentorNeeded ? 1 : 0);
     const filledSlots = (request.contributors?.length || 0) + (request.mentor ? 1 : 0);
     request.progress = Math.min(100, Math.round((filledSlots / totalSlots) * 100));
 
@@ -437,7 +481,7 @@ const approvePitchClaim = async (req, res) => {
     await claimRequest.save();
 
     // Use common handler to enroll the user
-    return handlePitchEnrollment(pitch, claimingUser, claimRequest.claimRole, res);
+    return handlePitchEnrollment(pitch, claimingUser, claimRequest.claimRole, claimRequest.roleName, res);
 };
 
 // @desc    Reject a join request for a pro-bono pitch
