@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect, adminOnly, moderatorOnly } = require('../middleware/authMiddleware');
 const {
     getStats,
     getUsers,
@@ -16,10 +16,44 @@ const {
     getRecruitment,
     updateRecruitment,
     resetDatabase,
-    promoteUser
+    promoteUser,
+    getPitchConfig,
+    updatePitchConfig,
+    getPitchesAdmin,
+    deletePitchAdmin,
+    createCommunity,
+    getCommunities,
+    updateGroupConfig,
+    getGroupConfigs,
+    deleteGroupConfig,
+    addOfficialGroup,
+    assignModerator,
+    assignCommunityModerator,
+    deleteCommunity,
+    updateCommunity,
+    updateGroup,
+    removeGroupFromCommunity,
+    generateBaseCommunities,
+    seedTestAccounts
 } = require('../controllers/adminController');
 
-// All routes require protect + adminOnly
+// Public config GET (still protected by session/token if desired, but not adminOnly)
+router.get('/pitch-config', protect, getPitchConfig);
+
+// Public/Semi-public getters for communities and configs
+router.get('/communities', protect, getCommunities);
+router.get('/group-configs', protect, getGroupConfigs);
+
+// Allow moderators to management (privacy, mods, nested circles)
+router.put('/communities/:id', protect, moderatorOnly, updateCommunity);
+router.put('/communities/groups/:id', protect, moderatorOnly, updateGroup);
+router.put('/communities/:id/moderators', protect, moderatorOnly, assignCommunityModerator);
+router.put('/groups/:id/moderators', protect, moderatorOnly, assignModerator);
+router.post('/communities/:id/groups', protect, moderatorOnly, addOfficialGroup);
+router.delete('/communities/:communityId/groups/:groupId', protect, moderatorOnly, removeGroupFromCommunity);
+
+
+// All routes below require protect + adminOnly
 router.use(protect, adminOnly);
 
 // Overview
@@ -48,7 +82,26 @@ router.get('/payments', getPayments);
 router.get('/recruitment', getRecruitment);
 router.put('/recruitment/:id', updateRecruitment);
 
+// Pitch Hub Config
+router.put('/pitch-config', updatePitchConfig);
+
+// Pitch Hub management
+router.get('/pitches', getPitchesAdmin);
+router.delete('/pitches/:id', deletePitchAdmin);
+
+// Communities & Group Configs
+router.post('/communities', createCommunity);
+router.delete('/communities/:id', deleteCommunity);
+router.post('/group-configs', updateGroupConfig);
+router.delete('/group-configs/:id', deleteGroupConfig);
+
 // Database Reset (DANGER)
 router.delete('/reset', resetDatabase);
+
+// Community Generator
+router.post('/communities/generator', generateBaseCommunities);
+
+// Database Seeder
+router.post('/seed', seedTestAccounts);
 
 module.exports = router;

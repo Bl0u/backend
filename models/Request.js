@@ -13,13 +13,25 @@ const requestSchema = mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim'],
+        enum: ['mentorship', 'partner', 'review_alert', 'notification', 'pitch_claim', 'community_join'],
         required: true
     },
     status: {
         type: String,
-        enum: ['pending', 'accepted', 'rejected', 'completed'],
+        enum: ['pending', 'accepted', 'rejected', 'completed', 'ongoing'],
         default: 'pending'
+    },
+    groupChat: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'GroupChat'
+    },
+    community: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Community'
+    },
+    answers: {
+        type: Map,
+        of: String
     },
     pitchRef: {
         type: mongoose.Schema.Types.ObjectId,
@@ -28,6 +40,9 @@ const requestSchema = mongoose.Schema({
     claimRole: {
         type: String,
         enum: ['teammate', 'mentor']
+    },
+    roleName: {
+        type: String
     },
     message: {
         type: String
@@ -67,7 +82,14 @@ const requestSchema = mongoose.Schema({
     mentor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
-    }
+    },
+    roles: [{
+        name: String,
+        requirements: String,
+        roleType: { type: String, enum: ['teammate', 'mentor'], default: 'teammate' },
+        isFilled: { type: Boolean, default: false },
+        filledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    }]
 }, {
     timestamps: true
 });

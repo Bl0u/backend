@@ -8,6 +8,10 @@ const Message = require('../models/Message');
 const Request = require('../models/Request');
 const Review = require('../models/Review');
 const Plan = require('../models/Plan');
+const PitchConfig = require('../models/PitchConfig');
+const Community = require('../models/Community');
+const GroupConfig = require('../models/GroupConfig');
+const GroupChat = require('../models/GroupChat');
 
 // ==============================
 // OVERVIEW / STATS
@@ -123,11 +127,14 @@ const getUsers = async (req, res) => {
 // @access  Admin
 const promoteUser = async (req, res) => {
     try {
-        const { role, university, college, academicLevel } = req.body;
-        const validRoles = ['student', 'admin', 'mentor', 'studentLead'];
+        const { role, roles, university, college, academicLevel } = req.body;
+        const validRoles = ['student', 'admin', 'mentor', 'studentLead', 'moderator'];
 
-        if (!validRoles.includes(role)) {
+        if (role && !validRoles.includes(role)) {
             return res.status(400).json({ message: 'Invalid role' });
+        }
+        if (roles && (!Array.isArray(roles) || !roles.every(r => validRoles.includes(r)))) {
+            return res.status(400).json({ message: 'Invalid roles array' });
         }
 
         const user = await User.findById(req.params.id);
@@ -135,12 +142,28 @@ const promoteUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Safety: Prevent self-demotion from admin
-        if (user._id.toString() === req.user._id.toString() && role !== 'admin') {
-            return res.status(403).json({ message: 'You cannot demote yourself from admin role' });
+        if (roles && Array.isArray(roles)) {
+            // Bulk update roles
+            user.roles = roles;
+        } else if (role) {
+            // Legacy toggle behavior
+            if (!user.roles.includes(role)) {
+                user.roles.push(role);
+            } else {
+                user.roles = user.roles.filter(r => r !== role);
+            }
         }
-
-        user.role = role;
+        
+        // Ensure at least 'student' remains
+        if (user.roles.length === 0) user.roles = ['student'];
+        
+        // Ensure Admin safety
+        const isAdmin = req.user.roles.includes('admin');
+        if (user._id.toString() === req.user._id.toString() && !user.roles.includes('admin')) {
+             // Re-add admin if they tried to remove themselves and it was their only role or something?
+             // Actually let's just block it.
+             return res.status(403).json({ message: 'You cannot remove your own admin status' });
+        }
 
         // Targeted fields for studentLead/mentor
         if (role === 'studentLead') {
@@ -152,11 +175,11 @@ const promoteUser = async (req, res) => {
         await user.save();
 
         res.json({
-            message: `User promoted to ${role} successfully`,
+            message: `User roles updated successfully`,
             user: {
                 _id: user._id,
                 name: user.name,
-                role: user.role,
+                roles: user.roles,
                 university: user.university,
                 college: user.college,
                 academicLevel: user.academicLevel
@@ -227,7 +250,7 @@ const deleteUser = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        if (user.role === 'admin') {
+        if (user.roles.includes('admin')) {
             return res.status(400).json({ message: 'Cannot delete an admin account' });
         }
 
@@ -275,7 +298,7 @@ const toggleBan = async (req, res) => {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        if (user.role === 'admin') {
+        if (user.roles.includes('admin')) {
             return res.status(400).json({ message: 'Cannot ban an admin account' });
         }
 
@@ -571,7 +594,12 @@ const resetDatabase = async (req, res) => {
 
         // Delete everything except admin users
         const results = await Promise.all([
-            User.deleteMany({ role: { $ne: 'admin' } }),
+            User.deleteMany({ 
+                $and: [
+                    { roles: { $ne: 'admin' } },
+                    { username: { $ne: 'admin' } }
+                ]
+            }),
             Thread.deleteMany({}),
             Post.deleteMany({}),
             Message.deleteMany({}),
@@ -582,13 +610,16 @@ const resetDatabase = async (req, res) => {
             Recruitment.deleteMany({}),
             Plan.deleteMany({}),
             Testimonial.deleteMany({}),
-            ReviewRequest.deleteMany({})
+            ReviewRequest.deleteMany({}),
+            Community.deleteMany({}),
+            GroupChat.deleteMany({})
         ]);
 
         const labels = [
             'Users (non-admin)', 'Threads', 'Posts', 'Messages',
             'Reports', 'Payments', 'Requests', 'Reviews',
-            'Recruitment', 'Plans', 'Testimonials', 'ReviewRequests'
+            'Recruitment', 'Plans', 'Testimonials', 'ReviewRequests',
+            'Communities', 'Circles'
         ];
 
         const summary = labels.map((label, i) => ({
@@ -597,7 +628,7 @@ const resetDatabase = async (req, res) => {
         }));
 
         // Reset admin stars to default
-        await User.updateMany({ role: 'admin' }, {
+        await User.updateMany({ roles: 'admin' }, {
             $set: {
                 purchasedThreads: [],
                 pinnedThreads: [],
@@ -620,6 +651,613 @@ const resetDatabase = async (req, res) => {
     }
 };
 
+// ==============================
+// PITCH HUB CONFIGURATION
+// ==============================
+
+// @desc    Get dynamic pitch questions config
+// @route   GET /api/admin/pitch-config
+// @access  Private (Accessed by public but often managed by admin)
+const getPitchConfig = async (req, res) => {
+    try {
+        let config = await PitchConfig.findOne();
+        if (!config) {
+            // Return empty defaults if not setup
+            return res.json({ categories: [], questions: [], rolesEnabled: false });
+        }
+        res.json(config);
+    } catch (error) {
+        console.error('Admin getPitchConfig error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Update pitch questions config
+// @route   POST /api/admin/pitch-config
+// @access  Admin
+const updatePitchConfig = async (req, res) => {
+    try {
+        const { categories, questions, rolesEnabled } = req.body;
+
+        let config = await PitchConfig.findOne();
+        if (config) {
+            config.categories = categories;
+            config.questions = questions;
+            config.rolesEnabled = rolesEnabled;
+            await config.save();
+        } else {
+            config = await PitchConfig.create({ categories, questions, rolesEnabled });
+        }
+
+        res.json({ message: 'Pitch configuration updated', config });
+    } catch (error) {
+        console.error('Admin updatePitchConfig error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==============================
+// PITCH MANAGEMENT (ADMIN)
+// ==============================
+
+// @desc    Get all public pitches
+// @route   GET /api/admin/pitches
+// @access  Admin
+const getPitchesAdmin = async (req, res) => {
+    try {
+        const pitches = await Request.find({ type: 'pitch_claim', isPublic: true })
+            .populate('sender', 'name username email avatar')
+            .sort({ createdAt: -1 });
+
+        res.json(pitches);
+    } catch (error) {
+        console.error('Admin getPitchesAdmin error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a pitch
+// @route   DELETE /api/admin/pitches/:id
+// @access  Admin
+const deletePitchAdmin = async (req, res) => {
+    try {
+        const pitch = await Request.findByIdAndDelete(req.params.id);
+        if (!pitch) {
+            return res.status(404).json({ message: 'Pitch not found' });
+        }
+        res.json({ message: 'Pitch deleted successfully' });
+    } catch (error) {
+        console.error('Admin deletePitchAdmin error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// ==============================
+// COMMUNITIES & GROUP CONFIGS
+// ==============================
+
+// @desc    Create a new community
+// @route   POST /api/admin/communities
+// @access  Admin
+const createCommunity = async (req, res) => {
+    try {
+        const { name, description, avatar, privacyType } = req.body;
+        const community = await Community.create({
+            name,
+            description,
+            avatar,
+            privacyType: privacyType || 'public',
+            creator: req.user._id
+        });
+        res.status(201).json(community);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Generate base communities and circles (Setup)
+// @route   POST /api/admin/communities/generator
+// @access  Admin
+const generateBaseCommunities = async (req, res) => {
+    try {
+        const universities = [
+            'Cairo University', 
+            'Ain Shams University', 
+            'Alexandria University', 
+            'Mansoura University',
+            'Helwan University',
+            'Assiut University'
+        ];
+
+        const baseCircles = [
+            { name: 'Computer Science', type: 'Subject' },
+            { name: 'Engineering', type: 'Subject' },
+            { name: 'Medicine', type: 'Subject' },
+            { name: 'General Discussion', type: 'General' },
+            { name: 'Student Life', type: 'Social' }
+        ];
+
+        let createdCount = 0;
+        let circleCount = 0;
+
+        for (const uniName of universities) {
+            // Check if exists
+            let community = await Community.findOne({ name: uniName });
+            if (!community) {
+                community = await Community.create({
+                    name: uniName,
+                    description: `Official hub for ${uniName} students.`,
+                    creator: req.user._id,
+                    privacyType: 'public'
+                });
+                createdCount++;
+            }
+
+            // Create base circles for each uni
+            for (const circleDef of baseCircles) {
+                const groupName = `${uniName} - ${circleDef.name}`;
+                let group = await GroupChat.findOne({ name: groupName, communityId: community._id });
+                if (!group) {
+                    group = await GroupChat.create({
+                        name: groupName,
+                        description: `${circleDef.type} group for ${uniName}.`,
+                        groupType: circleDef.type.toLowerCase(),
+                        communityId: community._id,
+                        isOfficial: true,
+                        privacyType: 'public',
+                        creator: req.user._id,
+                        members: [req.user._id]
+                    });
+                    
+                    if (!community.groups.includes(group._id)) {
+                        community.groups.push(group._id);
+                    }
+                    circleCount++;
+                }
+            }
+            await community.save();
+        }
+
+        res.json({ 
+            message: 'Base communities generated successfully',
+            summary: `Created ${createdCount} communities and ${circleCount} circles.`
+        });
+    } catch (error) {
+        console.error('Generator error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Get all communities
+// @route   GET /api/admin/communities
+// @access  Admin/Private
+const getCommunities = async (req, res) => {
+    try {
+        const communities = await Community.find()
+            .populate('groups', 'name avatar members count moderators')
+            .populate('moderators', 'name username');
+        res.json(communities);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Create/Update group configuration (dynamic types)
+// @route   POST /api/admin/group-configs
+// @access  Admin
+const updateGroupConfig = async (req, res) => {
+    try {
+        const { groupType, metadataRequirements, questions } = req.body;
+        let config = await GroupConfig.findOne({ groupType });
+
+        if (config) {
+            config.metadataRequirements = metadataRequirements;
+            config.questions = questions;
+            await config.save();
+        } else {
+            config = await GroupConfig.create({ groupType, metadataRequirements, questions });
+        }
+        res.json(config);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Get all group configurations
+// @route   GET /api/admin/group-configs
+// @access  Admin/Private
+const getGroupConfigs = async (req, res) => {
+    try {
+        const configs = await GroupConfig.find();
+        res.json(configs);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Add official group to community
+// @route   POST /api/admin/communities/:id/groups
+// @access  Admin
+const addOfficialGroup = async (req, res) => {
+    try {
+        const { name, description, avatar, groupType, metadata, moderators, privacyType } = req.body;
+        const community = await Community.findById(req.params.id);
+
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        const group = await GroupChat.create({
+            name,
+            description,
+            avatar,
+            groupType,
+            metadata,
+            moderators,
+            communityId: community._id,
+            isOfficial: true,
+            privacyType: privacyType || 'public',
+            creator: req.user._id,
+            members: [req.user._id, ...(moderators || [])]
+        });
+
+        community.groups.push(group._id);
+        await community.save();
+
+        res.status(201).json(group);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Assign moderator to group
+// @route   PUT /api/admin/groups/:id/moderators
+// @access  Admin
+const assignModerator = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const group = await GroupChat.findById(req.params.id);
+
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        if (!group.moderators.includes(userId)) {
+            group.moderators.push(userId);
+            if (!group.members.includes(userId)) group.members.push(userId);
+            await group.save();
+        }
+
+        // Ensure user has 'moderator' role site-wide
+        const user = await User.findById(userId);
+        if (user && !user.roles.includes('moderator')) {
+            user.roles.push('moderator');
+            await user.save();
+        }
+
+        res.json(group);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Assign regular user as community moderator
+// @route   PUT /api/admin/communities/:id/moderators
+// @access  Admin
+const assignCommunityModerator = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        const community = await Community.findById(req.params.id);
+
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        if (!community.moderators.includes(userId)) {
+            community.moderators.push(userId);
+            if (!community.members.includes(userId)) community.members.push(userId);
+            await community.save();
+        }
+
+        // Ensure user has 'moderator' site-wide
+        const user = await User.findById(userId);
+        if (user && !user.roles.includes('moderator')) {
+            user.roles.push('moderator');
+            await user.save();
+        }
+
+        res.json(community);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a community and all its groups + messages
+// @route   DELETE /api/admin/communities/:id
+// @access  Admin
+const deleteCommunity = async (req, res) => {
+    try {
+        const community = await Community.findById(req.params.id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        // Delete all messages in all groups belonging to this community
+        const groupIds = community.groups || [];
+        if (groupIds.length > 0) {
+            await Message.deleteMany({ groupChat: { $in: groupIds } });
+            await GroupChat.deleteMany({ _id: { $in: groupIds } });
+        }
+
+        await Community.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Community and all nested groups deleted successfully' });
+    } catch (error) {
+        console.error('Delete community error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Remove a specific group from a community
+// @route   DELETE /api/admin/communities/:id/groups/:groupId
+// @access  Admin
+const removeGroupFromCommunity = async (req, res) => {
+    try {
+        const { id, groupId } = req.params;
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        // Remove group ref from community
+        community.groups = community.groups.filter(g => g.toString() !== groupId);
+        await community.save();
+
+        // Delete the group's messages and the group itself
+        await Message.deleteMany({ groupChat: groupId });
+        await GroupChat.findByIdAndDelete(groupId);
+
+        res.json({ message: 'Group removed from community successfully' });
+    } catch (error) {
+        console.error('Remove group error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Delete a group configuration (dynamic type)
+// @route   DELETE /api/admin/group-configs/:id
+// @access  Admin
+const deleteGroupConfig = async (req, res) => {
+    try {
+        const config = await GroupConfig.findById(req.params.id);
+        if (!config) return res.status(404).json({ message: 'Configuration not found' });
+
+        await GroupConfig.findByIdAndDelete(req.params.id);
+        res.json({ message: 'Group type configuration deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Update a community (privacy toggle, name, etc.)
+// @route   PUT /api/admin/communities/:id
+// @access  Admin/Moderator
+const updateCommunity = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, description, avatar, privacyType } = req.body;
+
+        const community = await Community.findById(id);
+        if (!community) return res.status(404).json({ message: 'Community not found' });
+
+        if (name) community.name = name;
+        if (description) community.description = description;
+        if (avatar) community.avatar = avatar;
+        if (privacyType) community.privacyType = privacyType;
+
+        await community.save();
+        res.json({ message: 'Community updated successfully', community });
+    } catch (error) {
+        console.error('Update community error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Update a group (privacy toggle, etc.)
+// @route   PUT /api/admin/communities/groups/:id
+// @access  Admin/Moderator
+const updateGroup = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { privacyType, name } = req.body;
+
+        const group = await GroupChat.findById(id);
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        const wasPrivate = group.privacyType === 'private';
+        
+        if (privacyType) group.privacyType = privacyType;
+        if (name) group.name = name;
+
+        await group.save();
+
+        // Auto-accept pending requests when switching from private → public
+        if (wasPrivate && privacyType === 'public') {
+            const Request = require('../models/Request');
+            const pendingRequests = await Request.find({
+                type: 'community_join',
+                groupChat: group._id,
+                status: 'pending'
+            });
+            for (const request of pendingRequests) {
+                request.status = 'accepted';
+                await request.save();
+                // Add sender to group members
+                if (!group.members.map(m => m.toString()).includes(request.sender.toString())) {
+                    group.members.push(request.sender);
+                }
+            }
+            if (pendingRequests.length > 0) {
+                await group.save();
+            }
+        }
+
+        res.json({ message: 'Group updated successfully', group, autoAccepted: wasPrivate && privacyType === 'public' });
+    } catch (error) {
+        console.error('Update group error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// @desc    Seed test personnel (a, b, c, d) with full profiles
+// @route   POST /api/admin/seed
+// @access  Admin
+const seedTestAccounts = async (req, res) => {
+    try {
+        const bcrypt = require('bcryptjs');
+        const salt = await bcrypt.genSalt(10);
+
+        const testUsers = [
+            {
+                username: 'a',
+                name: 'Alice Johnson',
+                email: 'a@example.com',
+                password: 'a',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alice',
+                gender: 'Female',
+                major: 'Computer Science',
+                academicLevel: 'Level 3',
+                university: 'Cairo University',
+                college: 'Faculty of Computers and AI',
+                bio: 'CS student passionate about AI and algorithms. Looking for a teammate for a robot navigation project.',
+                partnerType: 'project teammate',
+                matchingGoal: 'Build a production-ready AI agent',
+                topics: ['Machine Learning', 'Python', 'React'],
+                neededFromPartner: 'Strong mathematical background and clean coding habits.',
+                city: 'Cairo',
+                country: 'Egypt',
+                languages: ['English', 'Arabic'],
+                studyMode: 'Hybrid',
+                preferredTools: ['Visual Studio Code', 'GitHub', 'Linear'],
+                commitmentLevel: 'Heavy',
+                sessionsPerWeek: 4,
+                sessionLength: '2 Hours',
+                pace: 'Fast',
+                canOffer: 'Deep knowledge in PyTorch and UI/UX design.',
+                lookingForPartner: true,
+                stars: 500,
+                skills: ['Python', 'PyTorch', 'React', 'Tailwind'],
+                interests: ['Artificial Intelligence', 'Open Source', 'UI/UX']
+            },
+            {
+                username: 'b',
+                name: 'Bob Smith',
+                email: 'b@example.com',
+                password: 'b',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bob',
+                gender: 'Male',
+                major: 'Software Engineering',
+                academicLevel: 'Level 4',
+                university: 'Ain Shams University',
+                college: 'Faculty of Engineering',
+                bio: 'Backend specialist with a focus on cloud computing and scalable architectures.',
+                partnerType: 'peer',
+                matchingGoal: 'Self-study Distributed Systems',
+                topics: ['Node.js', 'AWS', 'Docker'],
+                neededFromPartner: 'Consistency and a desire to learn complex backend concepts.',
+                city: 'Giza',
+                country: 'Egypt',
+                languages: ['English'],
+                studyMode: 'Online',
+                preferredTools: ['NeoVim', 'Docker Desktop', 'Notion'],
+                commitmentLevel: 'Balanced',
+                sessionsPerWeek: 3,
+                sessionLength: '1.5 Hours',
+                pace: 'Balanced',
+                canOffer: 'Guidance on AWS deployments and system design.',
+                lookingForPartner: true,
+                stars: 350,
+                skills: ['Go', 'Node.js', 'AWS', 'Kubernetes'],
+                interests: ['Cloud Architecture', 'Distributed Systems', 'DevOps']
+            },
+            {
+                username: 'c',
+                name: 'Charlie Brown',
+                email: 'c@example.com',
+                password: 'c',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Charlie',
+                gender: 'Male',
+                major: 'Information Technology',
+                academicLevel: 'Level 2',
+                university: 'Alexandria University',
+                college: 'Higher Institute of Engineering and Technology',
+                bio: 'Cybersecurity enthusiast. I love CTFs and breaking things (legally!).',
+                partnerType: 'peer',
+                matchingGoal: 'Prepare for OSCP certification',
+                topics: ['Networking', 'Penetration Testing', 'Linux'],
+                neededFromPartner: 'Someone who enjoys problem solving and has basic Linux knowledge.',
+                city: 'Alexandria',
+                country: 'Egypt',
+                languages: ['English', 'Arabic', 'French'],
+                studyMode: 'In-person',
+                preferredTools: ['Kali Linux', 'Burp Suite', 'Obsidian'],
+                commitmentLevel: 'Heavy',
+                sessionsPerWeek: 5,
+                sessionLength: '3 Hours',
+                pace: 'Fast',
+                canOffer: 'Hands-on training with security tools and network scanning.',
+                lookingForPartner: true,
+                stars: 250,
+                skills: ['Nmap', 'Metasploit', 'Bash Scripting', 'C++'],
+                interests: ['Cybersecurity', 'Ethical Hacking', 'Networking']
+            },
+            {
+                username: 'd',
+                name: 'Diana Prince',
+                email: 'd@example.com',
+                password: 'd',
+                roles: ['student'],
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Diana',
+                gender: 'Female',
+                major: 'Data Science',
+                academicLevel: 'Graduated',
+                university: 'Helwan University',
+                college: 'Faculty of Science',
+                bio: 'Recent graduate. I turn complex data into understandable stories through visualization.',
+                partnerType: 'project teammate',
+                matchingGoal: 'Submit a paper to a data science conference',
+                topics: ['R', 'Tableau', 'Statistics'],
+                neededFromPartner: 'Research-oriented mindset and decent academic writing skills.',
+                city: 'Cairo',
+                country: 'Egypt',
+                languages: ['Arabic', 'English'],
+                studyMode: 'Hybrid',
+                preferredTools: ['Jupyter Notebook', 'Tableau Desktop', 'Zotero'],
+                commitmentLevel: 'Casual',
+                sessionsPerWeek: 2,
+                sessionLength: '1 Hour',
+                pace: 'Slow & deep',
+                canOffer: 'Advanced statistical analysis and data cleanup expertise.',
+                lookingForPartner: true,
+                stars: 1000,
+                skills: ['R', 'SQL', 'Tableau', 'Public Speaking'],
+                interests: ['Data Analytics', 'Statistics', 'Visual Storytelling']
+            }
+        ];
+
+        for (const userData of testUsers) {
+            const hashedPassword = await bcrypt.hash(userData.password, salt);
+            await User.findOneAndUpdate(
+                { username: userData.username },
+                { 
+                    ...userData, 
+                    password: hashedPassword 
+                },
+                { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+        }
+
+        res.json({ message: 'Test personnel (a, b, c, d) seeded successfully with full profiles!' });
+    } catch (error) {
+        console.error('Seed test accounts error:', error);
+        res.status(500).json({ message: 'Server error during seeding' });
+    }
+};
+
 module.exports = {
     getStats,
     getUsers,
@@ -635,5 +1273,23 @@ module.exports = {
     getRecruitment,
     updateRecruitment,
     resetDatabase,
-    promoteUser
+    seedTestAccounts, // EXPORTED
+    promoteUser,
+    getPitchConfig,
+    updatePitchConfig,
+    getPitchesAdmin,
+    deletePitchAdmin,
+    createCommunity,
+    getCommunities,
+    deleteCommunity,
+    removeGroupFromCommunity,
+    updateGroupConfig,
+    getGroupConfigs,
+    deleteGroupConfig,
+    addOfficialGroup,
+    assignModerator,
+    assignCommunityModerator,
+    updateCommunity,
+    updateGroup,
+    generateBaseCommunities
 };

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 const Plan = require('../models/Plan');
 const User = require('../models/User');
 const Request = require('../models/Request');
@@ -76,22 +76,9 @@ const addVersion = async (req, res) => {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify the requester is one of the partners or a project member
-        let isAuthorized = plan.partner1?.toString() === currentUserId || plan.partner2?.toString() === currentUserId;
-        let projectMembers = [];
-        
-        if (plan.projectRef) {
-            const project = await Request.findById(plan.projectRef);
-            if (project) {
-                projectMembers = [...(project.contributors || []), project.mentor, project.sender].filter(Boolean);
-                if (projectMembers.some(id => id.toString() === currentUserId)) {
-                    isAuthorized = true;
-                }
-            }
-        }
-
-        if (!isAuthorized) {
-            return res.status(403).json({ message: 'Only authorized members can add versions' });
+        // Verify the requester is one of the partners
+        if (plan.partner1.toString() !== currentUserId && plan.partner2.toString() !== currentUserId) {
+            return res.status(403).json({ message: 'Only partners can add versions' });
         }
 
         // Calculate next version number
@@ -113,32 +100,19 @@ const addVersion = async (req, res) => {
 
         await plan.save();
 
-        if (plan.projectRef && projectMembers.length > 0) {
-            // Notify all project members except the author
-            for (const memberId of projectMembers) {
-                if (memberId.toString() !== currentUserId) {
-                    await Request.create({
-                        sender: currentUserId,
-                        receiver: memberId,
-                        type: 'notification',
-                        message: `${author.name} published a new version (v${newMajor}.${newMinor}) of the mission plan|||PROJECT_PLAN:${plan.projectRef}`,
-                        status: 'pending',
-                        isPublic: false
-                    });
-                }
-            }
+        if (plan.projectRef) {
+            // Project plan notification logic
+            // We could notify everyone, but for now just log it or notify Lead if not author
         } else {
-            const otherPartnerId = plan.partner1?.toString() === currentUserId ? plan.partner2 : plan.partner1;
-            if (otherPartnerId) {
-                await Request.create({
-                    sender: currentUserId,
-                    receiver: otherPartnerId,
-                    type: 'notification',
-                    message: `${author.name} published a new version (v${newMajor}.${newMinor}) of your collaboration plan|||PLAN:${plan._id}`,
-                    status: 'pending',
-                    isPublic: false
-                });
-            }
+            const otherPartnerId = plan.partner1.toString() === currentUserId ? plan.partner2 : plan.partner1;
+            await Request.create({
+                sender: currentUserId,
+                receiver: otherPartnerId,
+                type: 'notification',
+                message: `${author.name} published a new version (v${newMajor}.${newMinor}) of your collaboration plan|||PLAN:${plan._id}`,
+                status: 'pending',
+                isPublic: false
+            });
         }
 
         // Populate all required fields before returning
@@ -165,21 +139,9 @@ const editVersion = async (req, res) => {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify the requester is one of the partners or a project member
-        let isAuthorized = plan.partner1?.toString() === currentUserId || plan.partner2?.toString() === currentUserId;
-        
-        if (plan.projectRef) {
-            const project = await Request.findById(plan.projectRef);
-            if (project) {
-                const projectMembers = [...(project.contributors || []), project.mentor, project.sender].filter(Boolean);
-                if (projectMembers.some(id => id.toString() === currentUserId)) {
-                    isAuthorized = true;
-                }
-            }
-        }
-
-        if (!isAuthorized) {
-            return res.status(403).json({ message: 'Only authorized members can edit versions' });
+        // Verify the requester is one of the partners
+        if (plan.partner1.toString() !== currentUserId && plan.partner2.toString() !== currentUserId) {
+            return res.status(403).json({ message: 'Only partners can edit versions' });
         }
 
         const version = plan.versions[versionIdx];
@@ -216,21 +178,9 @@ const deleteVersion = async (req, res) => {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify the requester is one of the partners or a project member
-        let isAuthorized = plan.partner1?.toString() === currentUserId || plan.partner2?.toString() === currentUserId;
-        
-        if (plan.projectRef) {
-            const project = await Request.findById(plan.projectRef);
-            if (project) {
-                const projectMembers = [...(project.contributors || []), project.mentor, project.sender].filter(Boolean);
-                if (projectMembers.some(id => id.toString() === currentUserId)) {
-                    isAuthorized = true;
-                }
-            }
-        }
-
-        if (!isAuthorized) {
-            return res.status(403).json({ message: 'Only authorized members can delete versions' });
+        // Verify the requester is one of the partners
+        if (plan.partner1.toString() !== currentUserId && plan.partner2.toString() !== currentUserId) {
+            return res.status(403).json({ message: 'Only partners can delete versions' });
         }
 
         // Cannot delete if it's the only version
@@ -430,21 +380,8 @@ const addComment = async (req, res) => {
             return res.status(404).json({ message: 'Plan not found' });
         }
 
-        // Verify user is one of the partners or a project member
-        let isAuthorized = plan.partner1?.toString() === userId || plan.partner2?.toString() === userId;
-        let projectMembers = [];
-        
-        if (plan.projectRef) {
-            const project = await Request.findById(plan.projectRef);
-            if (project) {
-                projectMembers = [...(project.contributors || []), project.mentor, project.sender].filter(Boolean);
-                if (projectMembers.some(id => id.toString() === userId)) {
-                    isAuthorized = true;
-                }
-            }
-        }
-
-        if (!isAuthorized) {
+        // Verify user is one of the partners
+        if (plan.partner1.toString() !== userId && plan.partner2.toString() !== userId) {
             return res.status(403).json({ message: 'Access denied' });
         }
 
@@ -462,37 +399,18 @@ const addComment = async (req, res) => {
 
         await plan.save();
 
+        // Send notification to the other party
+        const recipientId = plan.partner1.toString() === userId ? plan.partner2 : plan.partner1;
         const versionLabel = `v${version.versionMajor}.${version.versionMinor}`;
 
-        if (plan.projectRef && projectMembers.length > 0) {
-            // Notify all project members except the author
-            for (const memberId of projectMembers) {
-                if (memberId.toString() !== userId) {
-                    await Request.create({
-                        sender: userId,
-                        receiver: memberId,
-                        type: 'notification',
-                        message: `${user.name} commented on ${versionLabel} of the mission plan|||PROJECT_PLAN:${plan.projectRef}`,
-                        status: 'pending',
-                        isPublic: false
-                    });
-                }
-            }
-        } else {
-            // Send notification to the other party
-            const recipientId = plan.partner1?.toString() === userId ? plan.partner2 : plan.partner1;
-            
-            if (recipientId) {
-                await Request.create({
-                    sender: userId,
-                    receiver: recipientId,
-                    type: 'notification',
-                    message: `${user.name} commented on ${versionLabel} of your collaboration plan|||PLAN:${plan._id}`,
-                    status: 'pending',
-                    isPublic: false
-                });
-            }
-        }
+        await Request.create({
+            sender: userId,
+            receiver: recipientId,
+            type: 'notification',
+            message: `${user.name} commented on ${versionLabel} of your collaboration plan|||PLAN:${plan._id}`,
+            status: 'pending',
+            isPublic: false
+        });
 
         // Populate all required fields before returning
         await plan.populate('partner1', 'name username');

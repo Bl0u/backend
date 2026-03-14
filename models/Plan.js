@@ -11,6 +11,11 @@ const planSchema = new mongoose.Schema({
         ref: 'User',
         required: false // Changed to false for legacy support
     },
+    projectRef: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Request',
+        required: false
+    },
     // Legacy support fields
     student: {
         type: mongoose.Schema.Types.ObjectId,

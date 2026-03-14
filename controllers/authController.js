@@ -1,6 +1,47 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
+const GroupChat = require('../models/GroupChat');
+
+// Utility to ensure lead/mentor is in their respective elite network
+const ensureEliteNetworks = async (user) => {
+    try {
+        if (user.roles.includes('studentLead')) {
+            const groupName = 'Student Lead Private Network';
+            let group = await GroupChat.findOne({ name: groupName, groupType: 'elite' });
+            if (!group) {
+                group = await GroupChat.create({
+                    name: groupName,
+                    description: 'Official private network for Student Leads.',
+                    groupType: 'elite',
+                    isOfficial: true,
+                    members: [user._id]
+                });
+            } else if (!group.members.includes(user._id)) {
+                group.members.push(user._id);
+                await group.save();
+            }
+        }
+        if (user.roles.includes('mentor')) {
+            const groupName = 'Mentor Private Network';
+            let group = await GroupChat.findOne({ name: groupName, groupType: 'elite' });
+            if (!group) {
+                group = await GroupChat.create({
+                    name: groupName,
+                    description: 'Official private network for Mentors.',
+                    groupType: 'elite',
+                    isOfficial: true,
+                    members: [user._id]
+                });
+            } else if (!group.members.includes(user._id)) {
+                group.members.push(user._id);
+                await group.save();
+            }
+        }
+    } catch (error) {
+        console.error('Failed to sync elite network:', error);
+    }
+};
 
 // @desc    Register new user
 // @route   POST /api/auth/register
@@ -57,19 +98,20 @@ const registerUser = async (req, res) => {
         username,
         email,
         password: hashedPassword,
-        role: role || 'student',
+        roles: role ? [role] : ['student'],
         ...cleanedRest
     };
 
     const user = await User.create(userPayload);
 
     if (user) {
+        await ensureEliteNetworks(user);
         res.status(201).json({
             _id: user.id,
             name: user.name,
             username: user.username,
             email: user.email,
-            role: user.role,
+            roles: user.roles,
             stars: user.stars || 0,
             token: generateToken(user._id),
         });
@@ -98,12 +140,14 @@ const loginUser = async (req, res) => {
             return res.status(403).json({ message: 'Your account has been banned. Contact support for more information.' });
         }
 
+        await ensureEliteNetworks(user);
+
         res.json({
             _id: user.id,
             name: user.name,
             username: user.username,
             email: user.email,
-            role: user.role,
+            roles: user.roles,
             stars: user.stars || 0,
             token: generateToken(user._id),
         });

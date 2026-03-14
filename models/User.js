@@ -5,7 +5,11 @@ const userSchema = mongoose.Schema({
     username: { type: String, required: true, unique: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['student', 'admin', 'mentor', 'studentLead'], default: 'student' },
+    roles: { 
+        type: [String], 
+        enum: ['student', 'admin', 'mentor', 'studentLead', 'moderator'], 
+        default: ['student'] 
+    },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
     gender: { type: String, enum: ['Male', 'Female'] },
     isPrivate: { type: Boolean, default: false },

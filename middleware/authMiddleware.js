@@ -18,15 +18,17 @@ const protect = async (req, res, next) => {
             // Get user from the token
             req.user = await User.findById(decoded.id).select('-password');
 
+            if (!req.user) {
+                return res.status(401).json({ message: 'Not authorized, user not found' });
+            }
+
             next();
         } catch (error) {
-            console.log(error);
-            res.status(401).json({ message: 'Not authorized' });
+            console.log('JWT Error:', error.message);
+            return res.status(401).json({ message: 'Not authorized, token failed' });
         }
-    }
-
-    if (!token) {
-        res.status(401).json({ message: 'Not authorized, no token' });
+    } else {
+        return res.status(401).json({ message: 'Not authorized, no token' });
     }
 };
 
@@ -59,11 +61,20 @@ const optionalAuth = async (req, res, next) => {
 
 // Admin-only guard — must be used AFTER `protect`
 const adminOnly = (req, res, next) => {
-    if (req.user && req.user.role === 'admin') {
+    if (req.user && req.user.roles && req.user.roles.includes('admin')) {
         next();
     } else {
         res.status(403).json({ message: 'Access denied. Admins only.' });
     }
 };
 
-module.exports = { protect, optionalAuth, adminOnly };
+// Moderator-only guard — must be used AFTER `protect`
+const moderatorOnly = (req, res, next) => {
+    if (req.user && req.user.roles && (req.user.roles.includes('moderator') || req.user.roles.includes('admin'))) {
+        next();
+    } else {
+        res.status(403).json({ message: 'Access denied. Moderators only.' });
+    }
+};
+
+module.exports = { protect, optionalAuth, adminOnly, moderatorOnly };

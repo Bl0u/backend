@@ -1,132 +1,56 @@
-const Request = require('../models/Request');
+﻿const Request = require('../models/Request');
 const User = require('../models/User');
-const GroupChat = require('../models/GroupChat');
-const Community = require('../models/Community');
-const Message = require('../models/Message');
-const Plan = require('../models/Plan');
 
 // @desc    Send a request (Mentorship or Partner)
 // @route   POST /api/requests
 // @access  Private
 const sendRequest = async (req, res) => {
     const { receiverId, type, message, pitch, isPublic, teamSize, mentorNeeded, isProBono, roles } = req.body;
-    const normalizedIsPublic = !!isPublic;
 
-    const communityId = req.body.community;
-    const groupChatId = req.body.groupChat;
-
-    // 0. Ban check
-    if (communityId || groupChatId) {
-        if (communityId) {
-            const community = await Community.findById(communityId);
-            if (community && community.bannedUsers?.includes(req.user.id)) {
-                return res.status(403).json({ message: 'You are banned from this community' });
-            }
-        }
-        if (groupChatId) {
-            const group = await GroupChat.findById(groupChatId);
-            if (group && group.bannedUsers?.includes(req.user.id)) {
-                return res.status(403).json({ message: 'You are banned from this circle' });
-            }
-        }
-    }
-
-    // 1. Resolve receiver for community_join requests if not provided
-    let finalReceiverId = receiverId;
-    if (type === 'community_join') {
-        try {
-            let target = null;
-            if (req.body.groupChat) {
-                target = await GroupChat.findById(req.body.groupChat);
-                if (target && target.privacyType === 'public') {
-                    // INSTANT JOIN GROUP
-                    if (!target.members.includes(req.user.id)) {
-                        target.members.push(req.user.id);
-                        await target.save();
-                    }
-                    await Message.create({
-                        groupChat: target._id,
-                        sender: req.user.id,
-                        content: `👋 ${req.user.name} has joined the unit.`,
-                        isAnnouncement: true
-                    });
-                    return res.status(200).json({ status: 'joined', message: 'Joined group instantly' });
-                }
-                finalReceiverId = target?.creator || target?.moderators?.[0];
-            } else if (req.body.community) {
-                target = await Community.findById(req.body.community);
-                if (target && target.privacyType === 'public') {
-                    // INSTANT JOIN COMMUNITY
-                    if (!target.members.includes(req.user.id)) {
-                        target.members.push(req.user.id);
-                        await target.save();
-                    }
-                    return res.status(200).json({ status: 'joined', message: 'Joined community instantly' });
-                }
-                finalReceiverId = target?.creator || target?.moderators?.[0];
-            }
-        } catch (error) {
-            console.error('Error resolving community join receiver:', error);
-        }
-    }
-
-    // 2. Final Fallback to Admin
-    if (!normalizedIsPublic && !finalReceiverId) {
-        const admin = await User.findOne({ roles: 'admin' });
-        finalReceiverId = admin?._id;
-    }
-
-    // 3. Global receiver check
-    const resolvedReceiverId = finalReceiverId;
-    if (!normalizedIsPublic && !resolvedReceiverId) {
-        console.error('Validation Error: No receiver resolved for request type:', type);
-        return res.status(400).json({ message: 'Receiver is required for this request' });
-    }
-
-    // 4. Auth & Duplicate checks
-    if (!normalizedIsPublic && req.user.id === resolvedReceiverId.toString()) {
+    if (!isPublic && req.user.id === receiverId) {
         return res.status(400).json({ message: 'Cannot send request to yourself' });
     }
 
-    if (!normalizedIsPublic) {
+    // prevent duplicate ACTIVE private requests (allow re-requesting after completion)
+    if (!isPublic && receiverId) {
         const existingActiveRequest = await Request.findOne({
             $or: [
-                { sender: req.user.id, receiver: resolvedReceiverId },
-                { sender: resolvedReceiverId, receiver: req.user.id }
+                { sender: req.user.id, receiver: receiverId },
+                { sender: receiverId, receiver: req.user.id }
             ],
             type,
             status: { $in: ['pending', 'accepted'] }
         });
 
-        if (existingActiveRequest && type !== 'notification' && type !== 'review_alert') {
-            return res.status(400).json({ message: 'An active request already exists' });
+        if (existingActiveRequest) {
+            return res.status(400).json({ message: 'An active request already exists for this user' });
+        }
+
+        // Also check if currently enrolled (active relationship)
+        const currentUser = await User.findById(req.user.id);
+        const isCurrentlyEnrolled = currentUser.enrolledPartners?.some(
+            entry => entry.user.toString() === receiverId && entry.status === 'active'
+        );
+
+        if (isCurrentlyEnrolled) {
+            return res.status(400).json({ message: `You already have an active partnership with this user` });
         }
     }
 
-    // 5. Create Request
-    try {
-        const request = await Request.create({
-            sender: req.user.id,
-            receiver: normalizedIsPublic ? undefined : resolvedReceiverId,
-            type: type || 'partner',
-            message,
-            pitch,
-            groupChat: req.body.groupChat,
-            community: req.body.community,
-            answers: req.body.answers,
-            pitchRef: req.body.pitchRef,
-            isPublic: normalizedIsPublic,
-            teamSize: roles ? roles.filter(r => r.roleType === 'teammate' || !r.roleType).length : (teamSize || 1),
-            mentorNeeded: !!mentorNeeded,
-            isProBono: !!isProBono,
-            roles: roles || []
-        });
+    const request = await Request.create({
+        sender: req.user.id,
+        receiver: isPublic ? undefined : receiverId,
+        type: 'partner', // Default to partner
+        message,
+        pitch,
+        isPublic: !!isPublic,
+        teamSize: teamSize || 1,
+        mentorNeeded: !!mentorNeeded,
+        isProBono: !!isProBono,
+        roles: roles || []
+    });
 
-        res.status(201).json(request);
-    } catch (error) {
-        console.error('Request Creation Error:', error);
-        res.status(400).json({ message: error.message || 'Failed to create request' });
-    }
+    res.status(201).json(request);
 };
 
 // @desc    Get received requests
@@ -134,59 +58,12 @@ const sendRequest = async (req, res) => {
 // @access  Private
 const getReceivedRequests = async (req, res) => {
     try {
-        const userId = req.user.id;
-        const isAdmin = req.user.roles.includes('admin');
-
-        // 1. Direct requests where user is the receiver
-        const directQuery = { receiver: userId };
-
-        // 2. Community join requests where user is a moderator or admin
-        // First find groups where user is mod
-        const modGroups = await GroupChat.find({ moderators: userId }).select('_id communityId');
-        
-        // Find communities where user is a moderator
-        const Community = require('../models/Community');
-        const modCommunities = await Community.find({ moderators: userId }).select('_id');
-        const modCommunityIds = modCommunities.map(c => c._id);
-
-        // Find all groups belonging to those communities
-        const inheritedGroups = await GroupChat.find({ communityId: { $in: modCommunityIds } }).select('_id');
-        
-        const allModGroupIds = [...new Set([
-            ...modGroups.map(g => g._id),
-            ...inheritedGroups.map(g => g._id)
-        ])];
-
-        const communityJoinQuery = {
-            type: 'community_join',
-            $or: [
-                { groupChat: { $in: allModGroupIds } },
-                { community: { $in: modCommunityIds } }
-            ]
-        };
-
-        // If admin, they see all community joins? Or maybe just those they moderate?
-        // User said: "request is sent to the author of the group (admin in this case) and moderators assigned by the admin"
-        // Let's also include those where they are the creator of the group
-        const createdGroups = await GroupChat.find({ creator: userId }).select('_id');
-        const createdGroupIds = createdGroups.map(g => g._id);
-
-        communityJoinQuery.$or.push({ groupChat: { $in: createdGroupIds } });
-
-        const requests = await Request.find({
-            $or: [
-                directQuery,
-                communityJoinQuery
-            ]
-        })
+        const requests = await Request.find({ receiver: req.user.id })
             .populate('sender', 'name username role profilePicture')
-            .populate('groupChat', 'name avatar communityId')
             .populate('pitchRef')
             .sort({ createdAt: -1 });
-
         res.json(requests);
     } catch (error) {
-        console.error('getReceivedRequests error:', error);
         res.status(500).json({ message: 'Server Error' });
     }
 };
@@ -241,7 +118,7 @@ const claimPublicPitch = async (req, res) => {
     const { role, roleName } = req.body; // 'teammate' or 'mentor', plus specific role name
     const claimingUser = await User.findById(req.user.id);
 
-    if (role === 'mentor' && !claimingUser.roles.includes('mentor')) {
+    if (role === 'mentor' && claimingUser.role !== 'mentor') {
         return res.status(403).json({ message: 'Only accounts with the "mentor" role can apply for mentor missions' });
     }
 
@@ -277,7 +154,7 @@ const claimPublicPitch = async (req, res) => {
 
 // Internal Helper: Handles the actual logic of adding a user to a pitch
 // Reused by claimPublicPitch (Standard) and approvePitchClaim (Pro-Bono)
-const handlePitchEnrollment = async (request, user, role, roleName, res) => {
+const handlePitchEnrollment = async (request, user, role, res) => {
     // Update Project Status & Contributors
     if (role === 'mentor') {
         if (!request.mentorNeeded) {
@@ -287,76 +164,32 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
             return res.status(400).json({ message: 'The mentor spot is already filled' });
         }
         request.mentor = user._id;
-
-        // SYNC: Find and fill the mentor role in the roles array if it exists
-        if (request.roles && request.roles.length > 0) {
-            const specificRole = request.roles.find(r =>
-                (r.roleType === 'mentor' || (roleName && r.name === roleName)) && !r.isFilled
-            );
-            if (specificRole) {
-                specificRole.isFilled = true;
-                specificRole.filledBy = user._id;
-            }
-        }
     } else {
         // Default to teammate
         if (request.contributors.includes(user._id)) {
             return res.status(400).json({ message: 'User has already joined this mission' });
         }
-
-        // STAFFING CHECK: Use total teammate roles if defined, otherwise teamSize
-        let totalTeammateSlots = request.teamSize || 1;
-        if (request.roles && request.roles.length > 0) {
-            const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
-            if (teammateRoles.length > 0) {
-                totalTeammateSlots = teammateRoles.length;
-            }
+        if (request.contributors.length >= (request.teamSize || 1)) {
+            return res.status(400).json({ message: 'All teammate slots are already filled' });
         }
-
-        if (request.contributors.length >= totalTeammateSlots) {
-            return res.status(400).json({ message: 'All teammate slots for this mission are already taken. Check back for other opportunities!' });
-        }
-
         request.contributors.push(user._id);
 
         // SYNC: Find and fill the specific role in the roles array
         if (request.roles && request.roles.length > 0) {
-            // Priority 1: Match by roleName (exact or case-insensitive)
-            // Priority 2: Match by claimRole string if it was passed in 'role' argument
-            const targetRoleName = (roleName || role || '').toLowerCase();
-            const specificRole = request.roles.find(r => 
-                (r.name && r.name.toLowerCase() === targetRoleName) && !r.isFilled
-            );
+            const specificRole = request.roles.find(r => r.name === role && !r.isFilled);
             if (specificRole) {
                 specificRole.isFilled = true;
                 specificRole.filledBy = user._id;
-            } else {
-                // Last ditch: just fill any teammate role that matches the roleType if name match fails
-                const fallbackRole = request.roles.find(r => 
-                    (r.roleType === 'teammate' || !r.roleType) && !r.isFilled
-                );
-                if (fallbackRole) {
-                    fallbackRole.isFilled = true;
-                    fallbackRole.filledBy = user._id;
-                }
             }
         }
     }
 
     // Check if mission is fully staffed
-    let totalTeammateSlots = request.teamSize || 1;
-    if (request.roles && request.roles.length > 0) {
-        const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
-        if (teammateRoles.length > 0) {
-            totalTeammateSlots = teammateRoles.length;
-        }
-    }
-
-    const isTeamFull = request.contributors.length >= totalTeammateSlots;
+    const isTeamFull = request.contributors.length >= (request.teamSize || 1);
     const isMentorFull = !request.mentorNeeded || !!request.mentor;
 
     if (isTeamFull && isMentorFull) {
-        request.status = 'ongoing'; // ACTIVE MISSION
+        request.status = 'ongoing'; // ACTIVE MISSION -> Moved from 'completed'
     } else {
         request.status = 'accepted'; // Partly Filled -> Keep in Hub
     }
@@ -368,7 +201,7 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
     }
 
     // Update progress percentage
-    const totalSlots = totalTeammateSlots + (request.mentorNeeded ? 1 : 0);
+    const totalSlots = (request.teamSize || 1) + (request.mentorNeeded ? 1 : 0);
     const filledSlots = (request.contributors?.length || 0) + (request.mentor ? 1 : 0);
     request.progress = Math.min(100, Math.round((filledSlots / totalSlots) * 100));
 
@@ -427,7 +260,7 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
                         sender: owner._id,
                         receiver: memberId,
                         type: 'notification',
-                        message: `MISSION START! 🚀 "${pitchTitle}" is fully staffed and ready for action. Visit the unified plan.|||PROJECT_PLAN:${request._id}`,
+                        message: `MISSION START! ≡ƒÜÇ "${pitchTitle}" is fully staffed and ready for action. Visit the unified plan.|||PLAN:${projectPlan._id}`,
                         status: 'accepted',
                         isPublic: false
                     });
@@ -438,7 +271,7 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
                     sender: owner._id,
                     receiver: user._id,
                     type: 'notification',
-                    message: `MISSION ACCEPTED! 🎉 You have officially joined "${pitchTitle}". Visit the project plan.|||PROJECT_PLAN:${request._id}`,
+                    message: `MISSION ACCEPTED! ≡ƒÄë You have officially joined "${pitchTitle}". Visit the project plan.|||PLAN:${projectPlan._id}`,
                     status: 'accepted',
                     isPublic: false
                 });
@@ -481,7 +314,7 @@ const approvePitchClaim = async (req, res) => {
     await claimRequest.save();
 
     // Use common handler to enroll the user
-    return handlePitchEnrollment(pitch, claimingUser, claimRequest.claimRole, claimRequest.roleName, res);
+    return handlePitchEnrollment(pitch, claimingUser, claimRequest.claimRole, res);
 };
 
 // @desc    Reject a join request for a pro-bono pitch
@@ -525,28 +358,7 @@ const respondToRequest = async (req, res) => {
         return res.status(404).json({ message: 'Request not found' });
     }
 
-    // AUTH CHECK: Direct receiver OR moderator (for community joins)
-    let isAuthorized = request.receiver.toString() === req.user.id;
-
-    if (!isAuthorized && request.type === 'community_join') {
-        // Check if user is a moderator of the group or community
-        if (request.groupChat) {
-            const group = await GroupChat.findById(request.groupChat);
-            if (group) {
-                const isGroupMod = group.moderators.includes(req.user.id);
-                const Community = require('../models/Community');
-                const community = await Community.findById(group.communityId);
-                const isCommMod = community?.moderators.includes(req.user.id);
-                if (isGroupMod || isCommMod) isAuthorized = true;
-            }
-        } else if (request.community) {
-            const Community = require('../models/Community');
-            const community = await Community.findById(request.community);
-            if (community?.moderators.includes(req.user.id)) isAuthorized = true;
-        }
-    }
-
-    if (!isAuthorized) {
+    if (request.receiver.toString() !== req.user.id) {
         return res.status(401).json({ message: 'Not authorized' });
     }
 
@@ -556,7 +368,8 @@ const respondToRequest = async (req, res) => {
     if (status === 'accepted') {
         const sender = await User.findById(request.sender);
         const receiver = await User.findById(req.user.id);
-        if (sender && receiver && request.type === 'partnership') {
+
+        if (sender && receiver) {
             const activePartner = receiver.enrolledPartners.find(p => p.user.toString() === sender._id.toString() && p.status === 'active');
             if (!activePartner) {
                 receiver.enrolledPartners.push({ user: sender._id, status: 'active' });
@@ -597,7 +410,7 @@ const respondToRequest = async (req, res) => {
                         sender: req.user.id,
                         receiver: sender._id,
                         type: 'notification',
-                        message: `Your partnership request has been accepted! 🎉 Collaborative plan created.|||PLAN:${newPlan._id}`,
+                        message: `Your partnership request has been accepted! ≡ƒÄë Collaborative plan created.|||PLAN:${newPlan._id}`,
                         status: 'accepted',
                         isPublic: false
                     });
@@ -606,7 +419,7 @@ const respondToRequest = async (req, res) => {
                         sender: req.user.id,
                         receiver: sender._id,
                         type: 'notification',
-                        message: `Your partnership request has been accepted! 🎉 Check your shared plan.|||PLAN:${existingPlan._id}`,
+                        message: `Your partnership request has been accepted! ≡ƒÄë Check your shared plan.|||PLAN:${existingPlan._id}`,
                         status: 'accepted',
                         isPublic: false
                     });
@@ -615,60 +428,12 @@ const respondToRequest = async (req, res) => {
                 console.error('Plan creation error in acceptance:', error);
             }
         }
-    }
-
-    // Community Join Specific Logic
-    if (status === 'accepted' && request.type === 'community_join') {
-        try {
-            if (request.groupChat) {
-                const group = await GroupChat.findById(request.groupChat);
-                if (group) {
-                    if (!group.members.includes(request.sender)) {
-                        group.members.push(request.sender);
-                        await group.save();
-                    }
-
-                    await Request.create({
-                        sender: req.user.id,
-                        receiver: request.sender,
-                        type: 'notification',
-                        message: `You have been accepted into the group "${group.name}"! 🚀 Check your chat box.`,
-                        status: 'accepted',
-                        isPublic: false
-                    });
-                }
-            } else if (request.community) {
-                const Community = require('../models/Community');
-                const community = await Community.findById(request.community);
-                if (community) {
-                    if (!community.members.includes(request.sender)) {
-                        community.members.push(request.sender);
-                        await community.save();
-                    }
-
-                    await Request.create({
-                        sender: req.user.id,
-                        receiver: request.sender,
-                        type: 'notification',
-                        message: `You have been accepted into the community "${community.name}"! 🚀`,
-                        status: 'accepted',
-                        isPublic: false
-                    });
-                }
-            }
-        } catch (error) {
-            console.error('Community join acceptance error:', error);
-        }
     } else if (status === 'rejected') {
-        const message = request.type === 'community_join'
-            ? `Your request to join the group was declined.`
-            : `Your partnership request was declined. You may try again later.`;
-
         await Request.create({
             sender: req.user.id,
             receiver: request.sender,
             type: 'notification',
-            message,
+            message: `Your partnership request was declined. You may try again later.`,
             status: 'rejected',
             isPublic: false
         });
@@ -783,7 +548,7 @@ const endRelationship = async (req, res) => {
         sender: req.user.id,
         receiver: targetUserId,
         type: 'notification',
-        message: `Your partnership with ${currentUser.name} has ended. Thank you for your collaboration! 🤝`,
+        message: `Your partnership with ${currentUser.name} has ended. Thank you for your collaboration! ≡ƒñ¥`,
         status: 'completed',
         isPublic: false
     });
@@ -890,7 +655,7 @@ const completeProject = async (req, res) => {
                 sender: req.user.id,
                 receiver: memberId,
                 type: 'notification',
-                message: `Mission Accomplished! 🏁 The project "${pitchTitle}" has been marked as completed. Well done!`,
+                message: `Mission Accomplished! ≡ƒÅü The project "${pitchTitle}" has been marked as completed. Well done!`,
                 status: 'accepted',
                 isPublic: false
             });
