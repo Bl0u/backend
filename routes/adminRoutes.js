@@ -48,6 +48,7 @@ router.put('/communities/:id', protect, moderatorOnly, updateCommunity);
 router.put('/communities/groups/:id', protect, moderatorOnly, updateGroup);
 router.put('/communities/:id/moderators', protect, moderatorOnly, assignCommunityModerator);
 router.put('/groups/:id/moderators', protect, moderatorOnly, assignModerator);
+router.post('/communities/:id/groups', protect, moderatorOnly, addOfficialGroup);
 router.delete('/communities/:communityId/groups/:groupId', protect, moderatorOnly, removeGroupFromCommunity);
 
 

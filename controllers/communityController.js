@@ -210,11 +210,39 @@ const deleteCircle = async (req, res) => {
     }
 };
 
+// @desc    Leave a group
+// @route   DELETE /api/communities/groups/:groupId/leave
+// @access  Private
+const leaveGroup = async (req, res) => {
+    try {
+        const { groupId } = req.params;
+        const group = await GroupChat.findById(groupId);
+        if (!group) return res.status(404).json({ message: 'Group not found' });
+
+        const userId = req.user._id.toString();
+        
+        // Cannot leave if you're the creator
+        if (group.creator?.toString() === userId) {
+            return res.status(400).json({ message: 'Creator cannot leave the group. Transfer ownership or delete it.' });
+        }
+
+        group.members = group.members.filter(m => m.toString() !== userId);
+        group.moderators = group.moderators.filter(m => m.toString() !== userId);
+        await group.save();
+
+        res.json({ message: 'Left group successfully' });
+    } catch (error) {
+        console.error('leaveGroup error:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 module.exports = {
     getModeratedContent,
     getJoinedContent,
     getMembers,
     toggleBan,
     createCircle,
-    deleteCircle
+    deleteCircle,
+    leaveGroup
 };

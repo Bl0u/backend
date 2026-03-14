@@ -1057,11 +1057,35 @@ const updateGroup = async (req, res) => {
         const group = await GroupChat.findById(id);
         if (!group) return res.status(404).json({ message: 'Group not found' });
 
+        const wasPrivate = group.privacyType === 'private';
+        
         if (privacyType) group.privacyType = privacyType;
         if (name) group.name = name;
 
         await group.save();
-        res.json({ message: 'Group updated successfully', group });
+
+        // Auto-accept pending requests when switching from private → public
+        if (wasPrivate && privacyType === 'public') {
+            const Request = require('../models/Request');
+            const pendingRequests = await Request.find({
+                type: 'community_join',
+                groupChat: group._id,
+                status: 'pending'
+            });
+            for (const request of pendingRequests) {
+                request.status = 'accepted';
+                await request.save();
+                // Add sender to group members
+                if (!group.members.map(m => m.toString()).includes(request.sender.toString())) {
+                    group.members.push(request.sender);
+                }
+            }
+            if (pendingRequests.length > 0) {
+                await group.save();
+            }
+        }
+
+        res.json({ message: 'Group updated successfully', group, autoAccepted: wasPrivate && privacyType === 'public' });
     } catch (error) {
         console.error('Update group error:', error);
         res.status(500).json({ message: 'Server error' });

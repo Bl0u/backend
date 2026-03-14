@@ -10,7 +10,8 @@ const {
     getMembers,
     toggleBan,
     createCircle,
-    deleteCircle
+    deleteCircle,
+    leaveGroup
 } = require('../controllers/communityController');
 
 // @desc    Get all communities
@@ -55,6 +56,7 @@ router.get('/:id/members', protect, getMembers);
 router.put('/:id/ban', protect, toggleBan);
 router.post('/:id/groups', protect, createCircle);
 router.delete('/groups/:groupId', protect, deleteCircle);
+router.delete('/groups/:groupId/leave', protect, leaveGroup);
 router.get('/groups/:id/members', protect, getMembers);
 
 module.exports = router;
