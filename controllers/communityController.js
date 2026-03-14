@@ -8,7 +8,8 @@ const Message = require('../models/Message');
 // @access  Private
 const getModeratedContent = async (req, res) => {
     try {
-        const userId = req.user._id;
+        const mongoose = require('mongoose');
+        const userId = new mongoose.Types.ObjectId(req.user._id);
         const isAdmin = req.user.roles.includes('admin');
 
         let moderatedCommunities;

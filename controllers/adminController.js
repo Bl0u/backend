@@ -594,7 +594,12 @@ const resetDatabase = async (req, res) => {
 
         // Delete everything except admin users
         const results = await Promise.all([
-            User.deleteMany({ roles: { $ne: 'admin' } }),
+            User.deleteMany({ 
+                $and: [
+                    { roles: { $ne: 'admin' } },
+                    { username: { $ne: 'admin' } }
+                ]
+            }),
             Thread.deleteMany({}),
             Post.deleteMany({}),
             Message.deleteMany({}),
@@ -605,13 +610,16 @@ const resetDatabase = async (req, res) => {
             Recruitment.deleteMany({}),
             Plan.deleteMany({}),
             Testimonial.deleteMany({}),
-            ReviewRequest.deleteMany({})
+            ReviewRequest.deleteMany({}),
+            Community.deleteMany({}),
+            GroupChat.deleteMany({})
         ]);
 
         const labels = [
             'Users (non-admin)', 'Threads', 'Posts', 'Messages',
             'Reports', 'Payments', 'Requests', 'Reviews',
-            'Recruitment', 'Plans', 'Testimonials', 'ReviewRequests'
+            'Recruitment', 'Plans', 'Testimonials', 'ReviewRequests',
+            'Communities', 'Circles'
         ];
 
         const summary = labels.map((label, i) => ({
