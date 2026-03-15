@@ -166,7 +166,8 @@ const promoteUser = async (req, res) => {
         }
 
         // Targeted fields for studentLead/mentor
-        if (role === 'studentLead') {
+        const isLead = user.roles.includes('studentLead');
+        if (isLead) {
             if (university) user.university = university;
             if (college) user.college = college;
             if (academicLevel) user.academicLevel = academicLevel;

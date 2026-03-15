@@ -15,8 +15,18 @@ const updateUserProfile = async (req, res) => {
         user.name = req.body.name || user.name;
         user.username = req.body.username || user.username;
         user.major = req.body.major || user.major;
-        user.academicLevel = req.body.academicLevel || user.academicLevel;
-        user.university = req.body.university || user.university;
+        
+        // Locking for Student Leads: Uni, College, and Level are managed by Admin
+        const isStudentLead = user.roles?.includes('studentLead');
+        if (isStudentLead) {
+            // Do not update these fields if user is a studentLead
+            console.log(`Locking profile fields for Student Lead: ${user.username}`);
+        } else {
+            user.academicLevel = req.body.academicLevel || user.academicLevel;
+            user.university = req.body.university || user.university;
+            user.college = req.body.college || user.college;
+        }
+
         user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
         user.gender = req.body.gender || user.gender;
         user.isPrivate = req.body.isPrivate !== undefined ? req.body.isPrivate : user.isPrivate;
