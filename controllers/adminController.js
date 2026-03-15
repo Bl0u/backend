@@ -566,6 +566,26 @@ const updateRecruitment = async (req, res) => {
             return res.status(404).json({ message: 'Application not found' });
         }
 
+        // AUTO-PROMOTE logic for Student Lead
+        if (status === 'accepted' && application.type === 'student_lead' && application.user) {
+            const userToPromote = await User.findById(application.user._id || application.user);
+            if (userToPromote) {
+                // Add studentLead role if not exists
+                if (!userToPromote.roles.includes('studentLead')) {
+                    userToPromote.roles.push('studentLead');
+                }
+                
+                // Assign Metadata from application data
+                const appData = application.data || {};
+                if (appData.university) userToPromote.university = appData.university;
+                if (appData.faculty) userToPromote.college = appData.faculty;
+                if (appData.level) userToPromote.academicLevel = appData.level;
+
+                await userToPromote.save();
+                console.log(`Auto-promoted user ${userToPromote.username} to Student Lead via recruitment acceptance.`);
+            }
+        }
+
         res.json({ message: `Application ${status}`, application });
     } catch (error) {
         console.error('Admin updateRecruitment error:', error);

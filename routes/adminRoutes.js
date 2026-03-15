@@ -52,6 +52,10 @@ router.put('/groups/:id/moderators', protect, moderatorOnly, assignModerator);
 router.post('/communities/:id/groups', protect, moderatorOnly, addOfficialGroup);
 router.delete('/communities/:communityId/groups/:groupId', protect, moderatorOnly, removeGroupFromCommunity);
 
+// User Search (Moderators + Admins)
+router.get('/users', protect, moderatorOnly, getUsers);
+router.get('/users/:id', protect, moderatorOnly, getUserDetails);
+
 
 // All routes below require protect + adminOnly
 router.use(protect, adminOnly);
@@ -60,8 +64,6 @@ router.use(protect, adminOnly);
 router.get('/stats', getStats);
 
 // Users
-router.get('/users', getUsers);
-router.get('/users/:id', getUserDetails);
 router.delete('/users/:id', deleteUser);
 router.put('/users/:id/ban', toggleBan);
 router.put('/users/:id/stars', adjustStars);
