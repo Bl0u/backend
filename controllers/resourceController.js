@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Thread = require('../models/Thread');
 const Post = require('../models/Post');
+const Notification = require('../models/Notification');
 
 // @desc    Create a new thread
 // @route   POST /api/resources/thread
@@ -265,6 +266,15 @@ const addPost = async (req, res) => {
                     status: 'accepted',
                     isPublic: false
                 });
+
+                // NEW: Persistent Notification
+                await Notification.create({
+                    recipient: parentPost.author,
+                    sender: req.user._id,
+                    type: 'mention',
+                    thread: threadId,
+                    message: `${postAuthor.name} replied to your post in "${thread.title}"`
+                });
             }
         } else {
             // Logic 1: Notify users who pinned the thread (for main comments only)
@@ -281,6 +291,15 @@ const addPost = async (req, res) => {
                     message: `${postAuthor.name} posted "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}" in thread "${thread.title}"|||THREAD:${threadId}`,
                     status: 'accepted',
                     isPublic: false
+                });
+
+                // NEW: Persistent Notification
+                await Notification.create({
+                    recipient: pinnedUser._id,
+                    sender: req.user._id,
+                    type: 'new_post',
+                    thread: threadId,
+                    message: `${postAuthor.name} shared an update in "${thread.title}"`
                 });
             }
         }
@@ -348,6 +367,21 @@ const updateThread = async (req, res) => {
         if (position !== undefined) thread.position = position;
 
         await thread.save();
+
+        // NEW: Notify users who pinned the thread about updates
+        const User = require('../models/User');
+        const pinnedUsers = await User.find({ pinnedThreads: req.params.id });
+        for (const pinnedUser of pinnedUsers) {
+            if (pinnedUser._id.toString() === req.user._id.toString()) continue;
+            await Notification.create({
+                recipient: pinnedUser._id,
+                sender: req.user._id,
+                type: 'thread_update',
+                thread: req.params.id,
+                message: `The thread "${thread.title}" has been updated.`
+            });
+        }
+
         res.json(thread);
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
@@ -791,10 +825,12 @@ const getUserActivity = async (req, res) => {
         let query = {};
 
         if (type === 'moderate') {
-            // Threads where user is a moderator but NOT the author
+            // Threads where user is the author OR a moderator
             query = {
-                moderators: userId,
-                author: { $ne: userId }
+                $or: [
+                    { author: userId },
+                    { moderators: userId }
+                ]
             };
         } else if (type === 'paid') {
             const User = require('../models/User');
