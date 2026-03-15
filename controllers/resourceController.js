@@ -873,6 +873,7 @@ const getUserActivity = async (req, res) => {
                     isPaid: 1,
                     price: 1,
                     createdAt: 1,
+                    'author._id': 1,
                     'author.name': 1,
                     'author.username': 1,
                     postCount: { $size: '$posts' },
