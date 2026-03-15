@@ -85,7 +85,7 @@ const updateUserProfile = async (req, res) => {
 // @access  Public
 const getUsers = async (req, res) => {
     const {
-        role,
+        roles,
         lookingForPartner,
         search,
         university,
@@ -97,8 +97,8 @@ const getUsers = async (req, res) => {
 
     let query = {};
 
-    if (role) {
-        query.role = role;
+    if (roles) {
+        query.roles = roles;
     }
 
     if (lookingForPartner === 'true') {
