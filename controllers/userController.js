@@ -184,6 +184,31 @@ const getUserById = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // ===== BACKEND HEALING: Resync missed partnerships =====
+        try {
+            const Request = require('../models/Request');
+            const acceptedRequests = await Request.find({
+                $or: [{ sender: user._id }, { receiver: user._id }],
+                type: { $in: ['partner', 'mentorship'] },
+                status: 'accepted'
+            });
+
+            let changed = false;
+            for (const reqObj of acceptedRequests) {
+                const partnerId = reqObj.sender.toString() === user._id.toString() ? reqObj.receiver : reqObj.sender;
+                if (!partnerId) continue;
+
+                const isEnrolled = user.enrolledPartners.some(p => p.user && p.user._id.toString() === partnerId.toString());
+                if (!isEnrolled) {
+                    console.log(`[Healing] Adding missing partner ${partnerId} to user ${user.username}`);
+                    user.enrolledPartners.push({ user: partnerId, status: 'active' });
+                    changed = true;
+                }
+            }
+            if (changed) await user.save();
+        } catch (healError) {
+            console.error('Healing error in getUserById:', healError);
+        }
         // Privacy Check
         const isOwner = req.user && req.user._id.toString() === user._id.toString();
         if (user.isPrivate && !isOwner) {
@@ -222,6 +247,31 @@ const getUserByUsername = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // ===== BACKEND HEALING: Resync missed partnerships =====
+        try {
+            const Request = require('../models/Request');
+            const acceptedRequests = await Request.find({
+                $or: [{ sender: user._id }, { receiver: user._id }],
+                type: { $in: ['partner', 'mentorship'] },
+                status: 'accepted'
+            });
+
+            let changed = false;
+            for (const reqObj of acceptedRequests) {
+                const partnerId = reqObj.sender.toString() === user._id.toString() ? reqObj.receiver : reqObj.sender;
+                if (!partnerId) continue;
+
+                const isEnrolled = user.enrolledPartners.some(p => p.user && p.user._id.toString() === partnerId.toString());
+                if (!isEnrolled) {
+                    console.log(`[Healing] Adding missing partner ${partnerId} to user ${user.username}`);
+                    user.enrolledPartners.push({ user: partnerId, status: 'active' });
+                    changed = true;
+                }
+            }
+            if (changed) await user.save();
+        } catch (healError) {
+            console.error('Healing error in getUserByUsername:', healError);
+        }
         // Privacy Check
         const isOwner = req.user && req.user._id.toString() === user._id.toString();
         if (user.isPrivate && !isOwner) {

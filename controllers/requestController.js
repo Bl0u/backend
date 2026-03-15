@@ -556,7 +556,7 @@ const respondToRequest = async (req, res) => {
     if (status === 'accepted') {
         const sender = await User.findById(request.sender);
         const receiver = await User.findById(req.user.id);
-        if (sender && receiver && request.type === 'partnership') {
+        if (sender && receiver && (request.type === 'partnership' || request.type === 'partner' || request.type === 'mentorship')) {
             const activePartner = receiver.enrolledPartners.find(p => p.user.toString() === sender._id.toString() && p.status === 'active');
             if (!activePartner) {
                 receiver.enrolledPartners.push({ user: sender._id, status: 'active' });
