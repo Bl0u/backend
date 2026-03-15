@@ -35,6 +35,11 @@ const initiatePayment = async (req, res) => {
 
         // ── Legacy Step 1: Authenticate ──
         console.log('🔐 Step 1: Authenticating with Paymob...');
+        console.log('PAYMOB_BASE:', process.env.PAYMOB_BASE);
+console.log('PAYMOB_API_KEY exists:', !!process.env.PAYMOB_API_KEY);
+console.log('PAYMOB_API_KEY length:', (process.env.PAYMOB_API_KEY || '').length);
+console.log('PAYMOB_API_KEY first 6:', (process.env.PAYMOB_API_KEY || '').slice(0, 6));
+console.log('WALLET_INTEGRATION_ID:', process.env.PAYMOB_WALLET_INTEGRATION_ID);
         const authRes = await axios.post(`${PAYMOB_BASE}/api/auth/tokens`, {
             api_key: process.env.PAYMOB_API_KEY
         });
