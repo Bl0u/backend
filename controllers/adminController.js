@@ -586,6 +586,23 @@ const updateRecruitment = async (req, res) => {
             }
         }
 
+        // AUTO-PROMOTE logic for Mentor
+        if (status === 'accepted' && application.type === 'mentor' && application.user) {
+            const userToPromote = await User.findById(application.user._id || application.user);
+            if (userToPromote) {
+                // Add mentor role if not exists
+                if (!userToPromote.roles.includes('mentor')) {
+                    userToPromote.roles.push('mentor');
+                }
+                
+                // Optional: You can map additional application data here if needed in the future
+                // const appData = application.data || {};
+
+                await userToPromote.save();
+                console.log(`Auto-promoted user ${userToPromote.username} to Mentor via recruitment acceptance.`);
+            }
+        }
+
         res.json({ message: `Application ${status}`, application });
     } catch (error) {
         console.error('Admin updateRecruitment error:', error);
