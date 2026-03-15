@@ -46,9 +46,15 @@ const getRecentChats = async (req, res) => {
             };
         });
 
-        // 2️⃣ Find all groups user is a member of
+        // 2️⃣ Find all groups user is a member of OR user has a matching role
+        const currentUser = await User.findById(userId);
+        const userRoles = currentUser?.roles || ['student'];
+        
         const groups = await GroupChat.find({
-            members: userId
+            $or: [
+                { members: userId },
+                { targetRoles: { $in: userRoles } }
+            ]
         });
 
         const recentGroupChats = await Promise.all(groups.map(async (group) => {
@@ -160,7 +166,7 @@ const sendMessage = async (req, res) => {
 // @access  Private (Lead/Admin)
 const createGroupChat = async (req, res) => {
     try {
-        const { name, description, userIds, groupType, academicLevel } = req.body;
+        const { name, description, userIds, groupType, academicLevel, targetRoles } = req.body;
 
         // Ensure creator is authorized
         if (!['admin', 'studentLead', 'mentor'].includes(req.user.role)) {
@@ -171,9 +177,10 @@ const createGroupChat = async (req, res) => {
             name,
             description,
             creator: req.user.id,
-            members: [...new Set([...userIds, req.user.id])],
+            members: [...new Set([...(userIds || []), req.user.id])],
             groupType: groupType || 'custom',
             academicLevel,
+            targetRoles: targetRoles || [],
             isOfficial: req.user.role === 'admin'
         });
 

@@ -18,7 +18,12 @@ const threadSchema = mongoose.Schema({
     // V2.0: Monetization
     isPaid: { type: Boolean, default: false },
     price: { type: Number, default: 0 }, // Cost in stars
-    purchasers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    purchasers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+
+    // V2.1: Targeted Resource Demographics (For Student Lead Access)
+    university: { type: String },
+    college: { type: String },
+    academicLevel: { type: String }
 }, {
     timestamps: true,
 });

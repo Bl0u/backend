@@ -7,7 +7,7 @@ const Post = require('../models/Post');
 // @access  Private
 const createThread = async (req, res) => {
     try {
-        const { title, description, content, tags, type, isCurated, isPaid, price } = req.body;
+        const { title, description, content, tags, type, isCurated, isPaid, price, university, college, academicLevel } = req.body;
 
         let attachments = [];
         if (req.file) {
@@ -25,7 +25,12 @@ const createThread = async (req, res) => {
             attachments,
             // V2.0: Monetization
             isPaid: isPaid === 'true' || isPaid === true,
-            price: isPaid ? parseInt(price) || 0 : 0
+            price: isPaid ? parseInt(price) || 0 : 0,
+
+            // V2.1: Targeting
+            university,
+            college,
+            academicLevel
         });
 
         res.status(201).json(thread);
@@ -156,6 +161,30 @@ const getThreadDetail = async (req, res) => {
                     const hasPurchased = user?.purchasedThreads?.includes(req.params.id);
                     hasAccess = hasPurchased;
                 }
+
+                // V2.1: Student Lead Targeted Resources Access Bypass
+                if (!hasAccess) {
+                    const User = require('../models/User');
+                    const user = await User.findById(userId);
+                    
+                    if (user && user.roles && user.roles.includes('studentLead')) {
+                        // If the thread has defined demographic targets, they must match the user's details if set.
+                        const isTargeted = thread.university || thread.college || thread.academicLevel;
+                        let userMatches = true;
+
+                        // Case-insensitive comparisons for robustness
+                        const normalize = (str) => str ? str.trim().toLowerCase() : '';
+
+                        if (thread.university && normalize(thread.university) !== normalize(user.university)) userMatches = false;
+                        if (thread.college && normalize(thread.college) !== normalize(user.college)) userMatches = false;
+                        if (thread.academicLevel && normalize(thread.academicLevel) !== normalize(user.academicLevel)) userMatches = false;
+                        
+                        // Grant free access
+                        if (isTargeted && userMatches) {
+                            hasAccess = true;
+                        }
+                    }
+                }
             }
         }
 
@@ -281,7 +310,7 @@ const toggleUpvote = async (req, res) => {
 // @access  Private
 const updateThread = async (req, res) => {
     try {
-        const { title, tags } = req.body;
+        const { title, tags, university, college, academicLevel } = req.body;
         const thread = await Thread.findById(req.params.id);
 
         if (!thread) {
@@ -298,6 +327,9 @@ const updateThread = async (req, res) => {
 
         if (title) thread.title = title;
         if (tags) thread.tags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+        if (university !== undefined) thread.university = university;
+        if (college !== undefined) thread.college = college;
+        if (academicLevel !== undefined) thread.academicLevel = academicLevel;
 
         await thread.save();
         res.json(thread);
