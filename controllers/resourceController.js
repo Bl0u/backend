@@ -180,7 +180,7 @@ const getThreadDetail = async (req, res) => {
                         if (thread.academicLevel && normalize(thread.academicLevel) !== normalize(user.academicLevel)) userMatches = false;
                         
                         // Grant free access
-                        if (isTargeted && userMatches) {
+                        if (userMatches) {
                             hasAccess = true;
                         }
                     }
