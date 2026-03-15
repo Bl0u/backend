@@ -29,6 +29,8 @@ const updateUserProfile = async (req, res) => {
 
         user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
         user.gender = req.body.gender || user.gender;
+        user.currentCompany = req.body.currentCompany || user.currentCompany;
+        user.currentPosition = req.body.currentPosition || user.currentPosition;
         user.isPrivate = req.body.isPrivate !== undefined ? req.body.isPrivate : user.isPrivate;
         user.socialLinks = req.body.socialLinks || user.socialLinks;
 
@@ -92,7 +94,9 @@ const getUsers = async (req, res) => {
         major,
         academicLevel,
         city,
-        country
+        country,
+        currentCompany,
+        currentPosition
     } = req.query;
 
     let query = {};
@@ -111,6 +115,8 @@ const getUsers = async (req, res) => {
     if (academicLevel) query.academicLevel = academicLevel;
     if (city) query.city = { $regex: city, $options: 'i' };
     if (country) query.country = { $regex: country, $options: 'i' };
+    if (currentCompany) query.currentCompany = { $regex: currentCompany, $options: 'i' };
+    if (currentPosition) query.currentPosition = { $regex: currentPosition, $options: 'i' };
 
     // Search by multiple fields (case-insensitive)
     if (search) {
@@ -282,18 +288,22 @@ const getUniquePartnerFilters = async (req, res) => {
     try {
         const query = { lookingForPartner: true };
 
-        const [universities, majors, cities, countries] = await Promise.all([
+        const [universities, majors, cities, countries, companies, positions] = await Promise.all([
             User.distinct('university', query),
             User.distinct('major', query),
             User.distinct('city', query),
-            User.distinct('country', query)
+            User.distinct('country', query),
+            User.distinct('currentCompany', query),
+            User.distinct('currentPosition', query)
         ]);
 
         res.json({
             University: universities.filter(Boolean),
             Major: majors.filter(Boolean),
             City: cities.filter(Boolean),
-            Country: countries.filter(Boolean)
+            Country: countries.filter(Boolean),
+            Company: companies.filter(Boolean),
+            Position: positions.filter(Boolean)
         });
     } catch (error) {
         console.error('Error fetching partner filters:', error);

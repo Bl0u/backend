@@ -1143,6 +1143,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Cairo University',
                 college: 'Faculty of Computers and AI',
                 bio: 'CS student passionate about AI and algorithms. Looking for a teammate for a robot navigation project.',
+                currentCompany: 'Google',
+                currentPosition: 'Software Engineer',
                 partnerType: 'project teammate',
                 matchingGoal: 'Build a production-ready AI agent',
                 topics: ['Machine Learning', 'Python', 'React'],
@@ -1175,6 +1177,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Ain Shams University',
                 college: 'Faculty of Engineering',
                 bio: 'Backend specialist with a focus on cloud computing and scalable architectures.',
+                currentCompany: 'Meta',
+                currentPosition: 'Backend Engineer',
                 partnerType: 'peer',
                 matchingGoal: 'Self-study Distributed Systems',
                 topics: ['Node.js', 'AWS', 'Docker'],
@@ -1207,6 +1211,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Alexandria University',
                 college: 'Higher Institute of Engineering and Technology',
                 bio: 'Cybersecurity enthusiast. I love CTFs and breaking things (legally!).',
+                currentCompany: 'Cisco',
+                currentPosition: 'Cybersecurity Analyst',
                 partnerType: 'peer',
                 matchingGoal: 'Prepare for OSCP certification',
                 topics: ['Networking', 'Penetration Testing', 'Linux'],
@@ -1239,6 +1245,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Helwan University',
                 college: 'Faculty of Science',
                 bio: 'Recent graduate. I turn complex data into understandable stories through visualization.',
+                currentCompany: 'Amazon',
+                currentPosition: 'Data Scientist',
                 partnerType: 'project teammate',
                 matchingGoal: 'Submit a paper to a data science conference',
                 topics: ['R', 'Tableau', 'Statistics'],
@@ -1262,10 +1270,12 @@ const seedTestAccounts = async (req, res) => {
 
         for (const userData of testUsers) {
             const hashedPassword = await bcrypt.hash(userData.password, salt);
+            // Destructure to ensure we have the fields, then spread in update
+            const { username, ...updateData } = userData;
             await User.findOneAndUpdate(
-                { username: userData.username },
+                { username },
                 { 
-                    ...userData, 
+                    ...updateData, 
                     password: hashedPassword 
                 },
                 { upsert: true, new: true, setDefaultsOnInsert: true }
