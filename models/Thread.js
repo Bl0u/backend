@@ -9,6 +9,7 @@ const threadSchema = mongoose.Schema({
     type: { type: String, enum: ['college', 'interview', 'specific', 'general', 'discussion', 'resource'], default: 'discussion' },
     tags: [{ type: String }], // e.g. ["#Java", "#IELTS"]
     position: { type: String }, // e.g. "Frontend Engineer" for interview prep
+    company: { type: String }, // e.g. "Google" for interview prep
     isCurated: { type: Boolean, default: false }, // For "Curated Topics"
     attachments: [{ type: String }], // Array of URLs
     moderators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

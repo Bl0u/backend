@@ -7,7 +7,11 @@ const Post = require('../models/Post');
 // @access  Private
 const createThread = async (req, res) => {
     try {
-        const { title, description, content, tags, type, isCurated, isPaid, price, university, college, academicLevel } = req.body;
+        const { 
+            title, description, content, tags, type, 
+            isCurated, isPaid, price, university, college, 
+            academicLevel, company, position 
+        } = req.body;
 
         let attachments = [];
         if (req.file) {
@@ -30,7 +34,9 @@ const createThread = async (req, res) => {
             // V2.1: Targeting
             university,
             college,
-            academicLevel
+            academicLevel,
+            company,
+            position
         });
 
         res.status(201).json(thread);
@@ -44,7 +50,7 @@ const createThread = async (req, res) => {
 // @access  Public
 const getThreads = async (req, res) => {
     try {
-        const { search, tag, tags, curated, author } = req.query;
+        const { search, tag, tags, curated, author, company, position } = req.query;
         let query = {};
 
         if (author) {
@@ -66,6 +72,9 @@ const getThreads = async (req, res) => {
             query.tags = tag.startsWith('#') ? tag : `#${tag}`;
             delete query.isCurated; // 1.7 Fix
         }
+
+        if (company) query.company = { $regex: company, $options: 'i' };
+        if (position) query.position = { $regex: position, $options: 'i' };
 
         if (search) {
             query.$or = [
@@ -114,7 +123,12 @@ const getThreads = async (req, res) => {
                     'author.username': 1,
                     'author.avatar': 1, // Include avatar
                     postCount: { $size: '$posts' },
-                    upvoteCount: { $sum: '$posts.upvoteCount' }
+                    upvoteCount: { $sum: '$posts.upvoteCount' },
+                    company: 1,
+                    position: 1,
+                    university: 1,
+                    college: 1,
+                    academicLevel: 1
                 }
             },
             { $sort: { createdAt: -1 } }
@@ -310,7 +324,7 @@ const toggleUpvote = async (req, res) => {
 // @access  Private
 const updateThread = async (req, res) => {
     try {
-        const { title, tags, university, college, academicLevel } = req.body;
+        const { title, tags, university, college, academicLevel, company, position } = req.body;
         const thread = await Thread.findById(req.params.id);
 
         if (!thread) {
@@ -330,6 +344,8 @@ const updateThread = async (req, res) => {
         if (university !== undefined) thread.university = university;
         if (college !== undefined) thread.college = college;
         if (academicLevel !== undefined) thread.academicLevel = academicLevel;
+        if (company !== undefined) thread.company = company;
+        if (position !== undefined) thread.position = position;
 
         await thread.save();
         res.json(thread);
@@ -723,6 +739,24 @@ const getUniqueTags = async (req, res) => {
     }
 };
 
+// @desc    Get unique metadata (Companies, Positions)
+// @route   GET /api/resources/metadata
+// @access  Public
+const getResourceMetadata = async (req, res) => {
+    try {
+        const [companies, positions] = await Promise.all([
+            Thread.distinct('company'),
+            Thread.distinct('position')
+        ]);
+        res.json({ 
+            companies: companies.filter(Boolean), 
+            positions: positions.filter(Boolean) 
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 // @desc    Toggle pin on a thread
 // @route   PUT /api/resources/thread/:id/pin
 // @access  Private
@@ -838,4 +872,5 @@ module.exports = {
     purchaseThread,
     togglePinThread,
     getUserActivity,
+    getResourceMetadata
 };

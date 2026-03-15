@@ -19,7 +19,8 @@ const {
     updateInstructions,
     purchaseThread,
     togglePinThread,
-    getUserActivity
+    getUserActivity,
+    getResourceMetadata
 } = require('../controllers/resourceController');
 const { protect, optionalAuth } = require('../middleware/authMiddleware');
 const multer = require('multer');
@@ -39,6 +40,7 @@ const upload = multer({ storage });
 
 router.get('/', getThreads);
 router.get('/tags', getUniqueTags);
+router.get('/metadata', getResourceMetadata);
 router.post('/thread', protect, upload.single('file'), createThread);
 router.get('/thread/:id', optionalAuth, getThreadDetail);
 router.put('/thread/:id', protect, updateThread);
