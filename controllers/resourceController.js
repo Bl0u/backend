@@ -1,13 +1,18 @@
 const mongoose = require('mongoose');
 const Thread = require('../models/Thread');
 const Post = require('../models/Post');
+const Notification = require('../models/Notification');
 
 // @desc    Create a new thread
 // @route   POST /api/resources/thread
 // @access  Private
 const createThread = async (req, res) => {
     try {
-        const { title, description, content, tags, type, isCurated, isPaid, price } = req.body;
+        const { 
+            title, description, content, tags, type, 
+            isCurated, isPaid, price, university, college, 
+            academicLevel, company, position 
+        } = req.body;
 
         let attachments = [];
         if (req.file) {
@@ -25,7 +30,14 @@ const createThread = async (req, res) => {
             attachments,
             // V2.0: Monetization
             isPaid: isPaid === 'true' || isPaid === true,
-            price: isPaid ? parseInt(price) || 0 : 0
+            price: isPaid ? parseInt(price) || 0 : 0,
+
+            // V2.1: Targeting
+            university,
+            college,
+            academicLevel,
+            company,
+            position
         });
 
         res.status(201).json(thread);
@@ -39,7 +51,7 @@ const createThread = async (req, res) => {
 // @access  Public
 const getThreads = async (req, res) => {
     try {
-        const { search, tag, tags, curated, author } = req.query;
+        const { search, tag, tags, curated, author, company, position } = req.query;
         let query = {};
 
         if (author) {
@@ -61,6 +73,9 @@ const getThreads = async (req, res) => {
             query.tags = tag.startsWith('#') ? tag : `#${tag}`;
             delete query.isCurated; // 1.7 Fix
         }
+
+        if (company) query.company = { $regex: company, $options: 'i' };
+        if (position) query.position = { $regex: position, $options: 'i' };
 
         if (search) {
             query.$or = [
@@ -109,7 +124,12 @@ const getThreads = async (req, res) => {
                     'author.username': 1,
                     'author.avatar': 1, // Include avatar
                     postCount: { $size: '$posts' },
-                    upvoteCount: { $sum: '$posts.upvoteCount' }
+                    upvoteCount: { $sum: '$posts.upvoteCount' },
+                    company: 1,
+                    position: 1,
+                    university: 1,
+                    college: 1,
+                    academicLevel: 1
                 }
             },
             { $sort: { createdAt: -1 } }
@@ -155,6 +175,30 @@ const getThreadDetail = async (req, res) => {
                     const user = await User.findById(userId);
                     const hasPurchased = user?.purchasedThreads?.includes(req.params.id);
                     hasAccess = hasPurchased;
+                }
+
+                // V2.1: Student Lead Targeted Resources Access Bypass
+                if (!hasAccess) {
+                    const User = require('../models/User');
+                    const user = await User.findById(userId);
+                    
+                    if (user && user.roles && user.roles.includes('studentLead')) {
+                        // If the thread has defined demographic targets, they must match the user's details if set.
+                        const isTargeted = thread.university || thread.college || thread.academicLevel;
+                        let userMatches = true;
+
+                        // Case-insensitive comparisons for robustness
+                        const normalize = (str) => str ? str.trim().toLowerCase() : '';
+
+                        if (thread.university && normalize(thread.university) !== normalize(user.university)) userMatches = false;
+                        if (thread.college && normalize(thread.college) !== normalize(user.college)) userMatches = false;
+                        if (thread.academicLevel && normalize(thread.academicLevel) !== normalize(user.academicLevel)) userMatches = false;
+                        
+                        // Grant free access
+                        if (userMatches) {
+                            hasAccess = true;
+                        }
+                    }
                 }
             }
         }
@@ -222,6 +266,15 @@ const addPost = async (req, res) => {
                     status: 'accepted',
                     isPublic: false
                 });
+
+                // NEW: Persistent Notification
+                await Notification.create({
+                    recipient: parentPost.author,
+                    sender: req.user._id,
+                    type: 'mention',
+                    thread: threadId,
+                    message: `${postAuthor.name} replied to your post in "${thread.title}"`
+                });
             }
         } else {
             // Logic 1: Notify users who pinned the thread (for main comments only)
@@ -238,6 +291,15 @@ const addPost = async (req, res) => {
                     message: `${postAuthor.name} posted "${content.substring(0, 30)}${content.length > 30 ? '...' : ''}" in thread "${thread.title}"|||THREAD:${threadId}`,
                     status: 'accepted',
                     isPublic: false
+                });
+
+                // NEW: Persistent Notification
+                await Notification.create({
+                    recipient: pinnedUser._id,
+                    sender: req.user._id,
+                    type: 'new_post',
+                    thread: threadId,
+                    message: `${postAuthor.name} shared an update in "${thread.title}"`
                 });
             }
         }
@@ -281,7 +343,7 @@ const toggleUpvote = async (req, res) => {
 // @access  Private
 const updateThread = async (req, res) => {
     try {
-        const { title, tags } = req.body;
+        const { title, tags, university, college, academicLevel, company, position } = req.body;
         const thread = await Thread.findById(req.params.id);
 
         if (!thread) {
@@ -298,8 +360,28 @@ const updateThread = async (req, res) => {
 
         if (title) thread.title = title;
         if (tags) thread.tags = typeof tags === 'string' ? JSON.parse(tags) : tags;
+        if (university !== undefined) thread.university = university;
+        if (college !== undefined) thread.college = college;
+        if (academicLevel !== undefined) thread.academicLevel = academicLevel;
+        if (company !== undefined) thread.company = company;
+        if (position !== undefined) thread.position = position;
 
         await thread.save();
+
+        // NEW: Notify users who pinned the thread about updates
+        const User = require('../models/User');
+        const pinnedUsers = await User.find({ pinnedThreads: req.params.id });
+        for (const pinnedUser of pinnedUsers) {
+            if (pinnedUser._id.toString() === req.user._id.toString()) continue;
+            await Notification.create({
+                recipient: pinnedUser._id,
+                sender: req.user._id,
+                type: 'thread_update',
+                thread: req.params.id,
+                message: `The thread "${thread.title}" has been updated.`
+            });
+        }
+
         res.json(thread);
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
@@ -691,6 +773,24 @@ const getUniqueTags = async (req, res) => {
     }
 };
 
+// @desc    Get unique metadata (Companies, Positions)
+// @route   GET /api/resources/metadata
+// @access  Public
+const getResourceMetadata = async (req, res) => {
+    try {
+        const [companies, positions] = await Promise.all([
+            Thread.distinct('company'),
+            Thread.distinct('position')
+        ]);
+        res.json({ 
+            companies: companies.filter(Boolean), 
+            positions: positions.filter(Boolean) 
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
 // @desc    Toggle pin on a thread
 // @route   PUT /api/resources/thread/:id/pin
 // @access  Private
@@ -725,10 +825,12 @@ const getUserActivity = async (req, res) => {
         let query = {};
 
         if (type === 'moderate') {
-            // Threads where user is a moderator but NOT the author
+            // Threads where user is the author OR a moderator
             query = {
-                moderators: userId,
-                author: { $ne: userId }
+                $or: [
+                    { author: userId },
+                    { moderators: userId }
+                ]
             };
         } else if (type === 'paid') {
             const User = require('../models/User');
@@ -771,6 +873,7 @@ const getUserActivity = async (req, res) => {
                     isPaid: 1,
                     price: 1,
                     createdAt: 1,
+                    'author._id': 1,
                     'author.name': 1,
                     'author.username': 1,
                     postCount: { $size: '$posts' },
@@ -806,4 +909,5 @@ module.exports = {
     purchaseThread,
     togglePinThread,
     getUserActivity,
+    getResourceMetadata
 };

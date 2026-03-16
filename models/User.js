@@ -23,6 +23,8 @@ const userSchema = mongoose.Schema({
     university: { type: String },
     college: { type: String },
     bio: { type: String, maxlength: 200 }, // Renamed from studyNote
+    currentCompany: { type: String },
+    currentPosition: { type: String },
 
     // 2️⃣ Partner Needs
     partnerType: { type: String, enum: ['peer', 'project teammate'] },

@@ -166,7 +166,8 @@ const promoteUser = async (req, res) => {
         }
 
         // Targeted fields for studentLead/mentor
-        if (role === 'studentLead') {
+        const isLead = user.roles.includes('studentLead');
+        if (isLead) {
             if (university) user.university = university;
             if (college) user.college = college;
             if (academicLevel) user.academicLevel = academicLevel;
@@ -563,6 +564,43 @@ const updateRecruitment = async (req, res) => {
 
         if (!application) {
             return res.status(404).json({ message: 'Application not found' });
+        }
+
+        // AUTO-PROMOTE logic for Student Lead
+        if (status === 'accepted' && application.type === 'student_lead' && application.user) {
+            const userToPromote = await User.findById(application.user._id || application.user);
+            if (userToPromote) {
+                // Add studentLead role if not exists
+                if (!userToPromote.roles.includes('studentLead')) {
+                    userToPromote.roles.push('studentLead');
+                }
+                
+                // Assign Metadata from application data
+                const appData = application.data || {};
+                if (appData.university) userToPromote.university = appData.university;
+                if (appData.faculty) userToPromote.college = appData.faculty;
+                if (appData.level) userToPromote.academicLevel = appData.level;
+
+                await userToPromote.save();
+                console.log(`Auto-promoted user ${userToPromote.username} to Student Lead via recruitment acceptance.`);
+            }
+        }
+
+        // AUTO-PROMOTE logic for Mentor
+        if (status === 'accepted' && application.type === 'mentor' && application.user) {
+            const userToPromote = await User.findById(application.user._id || application.user);
+            if (userToPromote) {
+                // Add mentor role if not exists
+                if (!userToPromote.roles.includes('mentor')) {
+                    userToPromote.roles.push('mentor');
+                }
+                
+                // Optional: You can map additional application data here if needed in the future
+                // const appData = application.data || {};
+
+                await userToPromote.save();
+                console.log(`Auto-promoted user ${userToPromote.username} to Mentor via recruitment acceptance.`);
+            }
         }
 
         res.json({ message: `Application ${status}`, application });
@@ -1122,6 +1160,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Cairo University',
                 college: 'Faculty of Computers and AI',
                 bio: 'CS student passionate about AI and algorithms. Looking for a teammate for a robot navigation project.',
+                currentCompany: 'Google',
+                currentPosition: 'Software Engineer',
                 partnerType: 'project teammate',
                 matchingGoal: 'Build a production-ready AI agent',
                 topics: ['Machine Learning', 'Python', 'React'],
@@ -1154,6 +1194,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Ain Shams University',
                 college: 'Faculty of Engineering',
                 bio: 'Backend specialist with a focus on cloud computing and scalable architectures.',
+                currentCompany: 'Meta',
+                currentPosition: 'Backend Engineer',
                 partnerType: 'peer',
                 matchingGoal: 'Self-study Distributed Systems',
                 topics: ['Node.js', 'AWS', 'Docker'],
@@ -1186,6 +1228,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Alexandria University',
                 college: 'Higher Institute of Engineering and Technology',
                 bio: 'Cybersecurity enthusiast. I love CTFs and breaking things (legally!).',
+                currentCompany: 'Cisco',
+                currentPosition: 'Cybersecurity Analyst',
                 partnerType: 'peer',
                 matchingGoal: 'Prepare for OSCP certification',
                 topics: ['Networking', 'Penetration Testing', 'Linux'],
@@ -1218,6 +1262,8 @@ const seedTestAccounts = async (req, res) => {
                 university: 'Helwan University',
                 college: 'Faculty of Science',
                 bio: 'Recent graduate. I turn complex data into understandable stories through visualization.',
+                currentCompany: 'Amazon',
+                currentPosition: 'Data Scientist',
                 partnerType: 'project teammate',
                 matchingGoal: 'Submit a paper to a data science conference',
                 topics: ['R', 'Tableau', 'Statistics'],
@@ -1241,10 +1287,12 @@ const seedTestAccounts = async (req, res) => {
 
         for (const userData of testUsers) {
             const hashedPassword = await bcrypt.hash(userData.password, salt);
+            // Destructure to ensure we have the fields, then spread in update
+            const { username, ...updateData } = userData;
             await User.findOneAndUpdate(
-                { username: userData.username },
+                { username },
                 { 
-                    ...userData, 
+                    ...updateData, 
                     password: hashedPassword 
                 },
                 { upsert: true, new: true, setDefaultsOnInsert: true }

@@ -15,10 +15,22 @@ const updateUserProfile = async (req, res) => {
         user.name = req.body.name || user.name;
         user.username = req.body.username || user.username;
         user.major = req.body.major || user.major;
-        user.academicLevel = req.body.academicLevel || user.academicLevel;
-        user.university = req.body.university || user.university;
+        
+        // Locking for Student Leads: Uni, College, and Level are managed by Admin
+        const isStudentLead = user.roles?.includes('studentLead');
+        if (isStudentLead) {
+            // Do not update these fields if user is a studentLead
+            console.log(`Locking profile fields for Student Lead: ${user.username}`);
+        } else {
+            user.academicLevel = req.body.academicLevel || user.academicLevel;
+            user.university = req.body.university || user.university;
+            user.college = req.body.college || user.college;
+        }
+
         user.bio = req.body.bio !== undefined ? req.body.bio : user.bio;
         user.gender = req.body.gender || user.gender;
+        user.currentCompany = req.body.currentCompany || user.currentCompany;
+        user.currentPosition = req.body.currentPosition || user.currentPosition;
         user.isPrivate = req.body.isPrivate !== undefined ? req.body.isPrivate : user.isPrivate;
         user.socialLinks = req.body.socialLinks || user.socialLinks;
 
@@ -75,20 +87,22 @@ const updateUserProfile = async (req, res) => {
 // @access  Public
 const getUsers = async (req, res) => {
     const {
-        role,
+        roles,
         lookingForPartner,
         search,
         university,
         major,
         academicLevel,
         city,
-        country
+        country,
+        currentCompany,
+        currentPosition
     } = req.query;
 
     let query = {};
 
-    if (role) {
-        query.role = role;
+    if (roles) {
+        query.roles = roles;
     }
 
     if (lookingForPartner === 'true') {
@@ -101,6 +115,8 @@ const getUsers = async (req, res) => {
     if (academicLevel) query.academicLevel = academicLevel;
     if (city) query.city = { $regex: city, $options: 'i' };
     if (country) query.country = { $regex: country, $options: 'i' };
+    if (currentCompany) query.currentCompany = { $regex: currentCompany, $options: 'i' };
+    if (currentPosition) query.currentPosition = { $regex: currentPosition, $options: 'i' };
 
     // Search by multiple fields (case-insensitive)
     if (search) {
@@ -168,6 +184,31 @@ const getUserById = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // ===== BACKEND HEALING: Resync missed partnerships =====
+        try {
+            const Request = require('../models/Request');
+            const acceptedRequests = await Request.find({
+                $or: [{ sender: user._id }, { receiver: user._id }],
+                type: { $in: ['partner', 'mentorship'] },
+                status: 'accepted'
+            });
+
+            let changed = false;
+            for (const reqObj of acceptedRequests) {
+                const partnerId = reqObj.sender.toString() === user._id.toString() ? reqObj.receiver : reqObj.sender;
+                if (!partnerId) continue;
+
+                const isEnrolled = user.enrolledPartners.some(p => p.user && p.user._id.toString() === partnerId.toString());
+                if (!isEnrolled) {
+                    console.log(`[Healing] Adding missing partner ${partnerId} to user ${user.username}`);
+                    user.enrolledPartners.push({ user: partnerId, status: 'active' });
+                    changed = true;
+                }
+            }
+            if (changed) await user.save();
+        } catch (healError) {
+            console.error('Healing error in getUserById:', healError);
+        }
         // Privacy Check
         const isOwner = req.user && req.user._id.toString() === user._id.toString();
         if (user.isPrivate && !isOwner) {
@@ -206,6 +247,31 @@ const getUserByUsername = async (req, res) => {
         .populate('enrolledPartners.user', 'name username avatar role major academicLevel university');
 
     if (user) {
+        // ===== BACKEND HEALING: Resync missed partnerships =====
+        try {
+            const Request = require('../models/Request');
+            const acceptedRequests = await Request.find({
+                $or: [{ sender: user._id }, { receiver: user._id }],
+                type: { $in: ['partner', 'mentorship'] },
+                status: 'accepted'
+            });
+
+            let changed = false;
+            for (const reqObj of acceptedRequests) {
+                const partnerId = reqObj.sender.toString() === user._id.toString() ? reqObj.receiver : reqObj.sender;
+                if (!partnerId) continue;
+
+                const isEnrolled = user.enrolledPartners.some(p => p.user && p.user._id.toString() === partnerId.toString());
+                if (!isEnrolled) {
+                    console.log(`[Healing] Adding missing partner ${partnerId} to user ${user.username}`);
+                    user.enrolledPartners.push({ user: partnerId, status: 'active' });
+                    changed = true;
+                }
+            }
+            if (changed) await user.save();
+        } catch (healError) {
+            console.error('Healing error in getUserByUsername:', healError);
+        }
         // Privacy Check
         const isOwner = req.user && req.user._id.toString() === user._id.toString();
         if (user.isPrivate && !isOwner) {
@@ -272,18 +338,22 @@ const getUniquePartnerFilters = async (req, res) => {
     try {
         const query = { lookingForPartner: true };
 
-        const [universities, majors, cities, countries] = await Promise.all([
+        const [universities, majors, cities, countries, companies, positions] = await Promise.all([
             User.distinct('university', query),
             User.distinct('major', query),
             User.distinct('city', query),
-            User.distinct('country', query)
+            User.distinct('country', query),
+            User.distinct('currentCompany', query),
+            User.distinct('currentPosition', query)
         ]);
 
         res.json({
             University: universities.filter(Boolean),
             Major: majors.filter(Boolean),
             City: cities.filter(Boolean),
-            Country: countries.filter(Boolean)
+            Country: countries.filter(Boolean),
+            Company: companies.filter(Boolean),
+            Position: positions.filter(Boolean)
         });
     } catch (error) {
         console.error('Error fetching partner filters:', error);

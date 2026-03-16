@@ -46,9 +46,15 @@ const getRecentChats = async (req, res) => {
             };
         });
 
-        // 2️⃣ Find all groups user is a member of
+        // 2️⃣ Find all groups user is a member of OR user has a matching role
+        const currentUser = await User.findById(userId);
+        const userRoles = currentUser?.roles || ['student'];
+        
         const groups = await GroupChat.find({
-            members: userId
+            $or: [
+                { members: userId },
+                { targetRoles: { $in: userRoles } }
+            ]
         });
 
         const recentGroupChats = await Promise.all(groups.map(async (group) => {
@@ -160,7 +166,7 @@ const sendMessage = async (req, res) => {
 // @access  Private (Lead/Admin)
 const createGroupChat = async (req, res) => {
     try {
-        const { name, description, userIds, groupType, academicLevel } = req.body;
+        const { name, description, userIds, groupType, academicLevel, targetRoles } = req.body;
 
         // Ensure creator is authorized
         if (!['admin', 'studentLead', 'mentor'].includes(req.user.role)) {
@@ -171,9 +177,10 @@ const createGroupChat = async (req, res) => {
             name,
             description,
             creator: req.user.id,
-            members: [...new Set([...userIds, req.user.id])],
+            members: [...new Set([...(userIds || []), req.user.id])],
             groupType: groupType || 'custom',
             academicLevel,
+            targetRoles: targetRoles || [],
             isOfficial: req.user.role === 'admin'
         });
 
@@ -328,6 +335,64 @@ const handleJoinRequest = async (req, res) => {
     }
 };
 
+// @desc    Get or Create a chat for a project
+// @route   POST /api/chat/project-chat
+// @access  Private
+const getOrCreateProjectChat = async (req, res) => {
+    try {
+        const { projectId } = req.body;
+        const userId = req.user.id;
+
+        // 1. Check if chat already exists
+        let chat = await GroupChat.findOne({ projectRef: projectId });
+
+        if (chat) {
+            // Ensure user is a member or has right to enter
+            if (!chat.members.includes(userId)) {
+                chat.members.push(userId);
+                await chat.save();
+            }
+            return res.json({ groupId: chat._id });
+        }
+
+        // 2. Create new chat based on project
+        const project = await Request.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Verify user belongs to project
+        const members = [project.sender, ...(project.contributors || []), project.mentor].filter(Boolean).map(id => id.toString());
+        if (!members.includes(userId)) {
+            return res.status(403).json({ message: 'You are not a member of this project' });
+        }
+
+        const pitchTitle = project.pitch?.get('Hook') || project.pitch?.get('The Hook (Short summary)') || "Mission Chat";
+
+        chat = await GroupChat.create({
+            name: pitchTitle,
+            projectRef: projectId,
+            members: [...new Set(members)],
+            creator: project.sender,
+            groupType: 'custom',
+            privacyType: 'private'
+        });
+
+        // Add an initial announcement
+        await Message.create({
+            groupChat: chat._id,
+            sender: project.sender,
+            content: `🚀 Team chat for "${pitchTitle}" has been established.`,
+            isAnnouncement: true
+        });
+
+        res.status(201).json({ groupId: chat._id });
+    } catch (error) {
+        console.error('getOrCreateProjectChat error:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 module.exports = {
     getRecentChats,
     getMessages,
@@ -336,5 +401,6 @@ module.exports = {
     addMemberToGroup,
     getUnreadCount,
     requestJoinGroup,
-    handleJoinRequest
+    handleJoinRequest,
+    getOrCreateProjectChat
 };

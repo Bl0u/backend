@@ -11,10 +11,15 @@ const groupChatSchema = mongoose.Schema({
         // enum: ['level', 'custom', 'elite'], // Removed strict enum to support dynamic types
         default: 'custom'
     },
+    targetRoles: [{ 
+        type: String, 
+        enum: ['student', 'admin', 'mentor', 'studentLead', 'moderator'] 
+    }],
     communityId: { type: mongoose.Schema.Types.ObjectId, ref: 'Community' },
     isOfficial: { type: Boolean, default: false },
     avatar: { type: String, default: 'https://via.placeholder.com/150' },
     privacyType: { type: String, enum: ['public', 'private'], default: 'public' },
+    projectRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Request' },
 
     // Metadata for official groups (University, School, etc.)
     metadata: {
