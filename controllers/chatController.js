@@ -335,6 +335,64 @@ const handleJoinRequest = async (req, res) => {
     }
 };
 
+// @desc    Get or Create a chat for a project
+// @route   POST /api/chat/project-chat
+// @access  Private
+const getOrCreateProjectChat = async (req, res) => {
+    try {
+        const { projectId } = req.body;
+        const userId = req.user.id;
+
+        // 1. Check if chat already exists
+        let chat = await GroupChat.findOne({ projectRef: projectId });
+
+        if (chat) {
+            // Ensure user is a member or has right to enter
+            if (!chat.members.includes(userId)) {
+                chat.members.push(userId);
+                await chat.save();
+            }
+            return res.json({ groupId: chat._id });
+        }
+
+        // 2. Create new chat based on project
+        const project = await Request.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Verify user belongs to project
+        const members = [project.sender, ...(project.contributors || []), project.mentor].filter(Boolean).map(id => id.toString());
+        if (!members.includes(userId)) {
+            return res.status(403).json({ message: 'You are not a member of this project' });
+        }
+
+        const pitchTitle = project.pitch?.get('Hook') || project.pitch?.get('The Hook (Short summary)') || "Mission Chat";
+
+        chat = await GroupChat.create({
+            name: pitchTitle,
+            projectRef: projectId,
+            members: [...new Set(members)],
+            creator: project.sender,
+            groupType: 'custom',
+            privacyType: 'private'
+        });
+
+        // Add an initial announcement
+        await Message.create({
+            groupChat: chat._id,
+            sender: project.sender,
+            content: `🚀 Team chat for "${pitchTitle}" has been established.`,
+            isAnnouncement: true
+        });
+
+        res.status(201).json({ groupId: chat._id });
+    } catch (error) {
+        console.error('getOrCreateProjectChat error:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 module.exports = {
     getRecentChats,
     getMessages,
@@ -343,5 +401,6 @@ module.exports = {
     addMemberToGroup,
     getUnreadCount,
     requestJoinGroup,
-    handleJoinRequest
+    handleJoinRequest,
+    getOrCreateProjectChat
 };

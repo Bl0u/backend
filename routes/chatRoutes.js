@@ -8,7 +8,8 @@ const {
     addMemberToGroup,
     getUnreadCount,
     requestJoinGroup,
-    handleJoinRequest
+    handleJoinRequest,
+    getOrCreateProjectChat
 } = require('../controllers/chatController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,6 +21,7 @@ router.post('/groups', createGroupChat);
 router.post('/groups/:id/members', addMemberToGroup);
 router.post('/groups/:id/join', requestJoinGroup);
 router.put('/requests/:id', handleJoinRequest);
+router.post('/project-chat', getOrCreateProjectChat);
 router.get('/:targetId', getMessages);
 router.post('/', sendMessage);
 

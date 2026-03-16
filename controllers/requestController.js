@@ -171,7 +171,12 @@ const getReceivedRequests = async (req, res) => {
         const createdGroups = await GroupChat.find({ creator: userId }).select('_id');
         const createdGroupIds = createdGroups.map(g => g._id);
 
+        // Also include communities user created
+        const createdCommunities = await Community.find({ creator: userId }).select('_id');
+        const createdCommunityIds = createdCommunities.map(c => c._id);
+
         communityJoinQuery.$or.push({ groupChat: { $in: createdGroupIds } });
+        communityJoinQuery.$or.push({ community: { $in: createdCommunityIds } });
 
         const requests = await Request.find({
             $or: [
@@ -305,15 +310,14 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
         }
 
         // STAFFING CHECK: Use total teammate roles if defined, otherwise teamSize
-        let totalTeammateSlots = request.teamSize || 1;
+        let totalTeammateSlots = 0;
         if (request.roles && request.roles.length > 0) {
-            const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
-            if (teammateRoles.length > 0) {
-                totalTeammateSlots = teammateRoles.length;
-            }
+            totalTeammateSlots = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType).length;
+        } else {
+            totalTeammateSlots = request.teamSize || 0;
         }
 
-        if (request.contributors.length >= totalTeammateSlots) {
+        if (request.contributors.length >= totalTeammateSlots && totalTeammateSlots > 0) {
             return res.status(400).json({ message: 'All teammate slots for this mission are already taken. Check back for other opportunities!' });
         }
 
@@ -344,12 +348,11 @@ const handlePitchEnrollment = async (request, user, role, roleName, res) => {
     }
 
     // Check if mission is fully staffed
-    let totalTeammateSlots = request.teamSize || 1;
+    let totalTeammateSlots = 0;
     if (request.roles && request.roles.length > 0) {
-        const teammateRoles = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType);
-        if (teammateRoles.length > 0) {
-            totalTeammateSlots = teammateRoles.length;
-        }
+        totalTeammateSlots = request.roles.filter(r => r.roleType === 'teammate' || !r.roleType).length;
+    } else {
+        totalTeammateSlots = request.teamSize || 0;
     }
 
     const isTeamFull = request.contributors.length >= totalTeammateSlots;
@@ -815,6 +818,45 @@ const cancelRequest = async (req, res) => {
     res.json({ message: 'Request cancelled successfully' });
 };
 
+// @desc    Update project title
+// @route   PUT /api/requests/:id/title
+// @access  Private
+const updateProjectTitle = async (req, res) => {
+    try {
+        const { title } = req.body;
+        const project = await Request.findById(req.params.id);
+
+        if (!project) {
+            return res.status(404).json({ message: 'Project not found' });
+        }
+
+        // Only the project owner (sender) can update the title
+        if (project.sender.toString() !== req.user.id) {
+            return res.status(401).json({ message: 'Only the project lead can change the title' });
+        }
+
+        if (!project.pitch) {
+            project.pitch = new Map();
+        }
+
+        // Handle both Hook styles
+        if (project.pitch.has('Hook')) {
+            project.pitch.set('Hook', title);
+        } else if (project.pitch.has('The Hook (Short summary)')) {
+            project.pitch.set('The Hook (Short summary)', title);
+        } else {
+            // Default to Hook if neither exists
+            project.pitch.set('Hook', title);
+        }
+
+        await project.save();
+        res.json({ message: 'Project title updated successfully', project });
+    } catch (error) {
+        console.error('Error updating project title:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 // @desc    Check if users are connected (for reviews)
 // @route   GET /api/requests/check/:userId
 // @access  Private
@@ -918,5 +960,6 @@ module.exports = {
     cancelRequest,
     updateRelationshipNote,
     getMyProjects,
-    completeProject
+    completeProject,
+    updateProjectTitle
 };
