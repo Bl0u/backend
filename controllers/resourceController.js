@@ -129,7 +129,8 @@ const getThreads = async (req, res) => {
                     position: 1,
                     university: 1,
                     college: 1,
-                    academicLevel: 1
+                    academicLevel: 1,
+                    'earningsConfig.enabled': 1  // V2.2: Revenue sharing badge
                 }
             },
             { $sort: { createdAt: -1 } }
@@ -148,7 +149,8 @@ const getThreadDetail = async (req, res) => {
     try {
         const thread = await Thread.findById(req.params.id)
             .populate('author', 'name username avatar')
-            .populate('moderators', 'name username avatar');
+            .populate('moderators', 'name username avatar')
+            .populate('earningsConfig.participatingEarners', 'name username avatar');
         if (!thread) {
             return res.status(404).json({ message: 'Thread not found' });
         }
@@ -708,32 +710,24 @@ const removeModerator = async (req, res) => {
 const purchaseThread = async (req, res) => {
     try {
         const User = require('../models/User');
+        const Earning = require('../models/Earning');
         const threadId = req.params.id;
         const userId = req.user._id.toString();
 
-        // Find thread
-        const thread = await Thread.findById(threadId);
-        if (!thread) {
-            return res.status(404).json({ message: 'Thread not found' });
-        }
+        const thread = await Thread.findById(threadId)
+            .populate('earningsConfig.participatingEarners', 'name username');
+        if (!thread) return res.status(404).json({ message: 'Thread not found' });
+        if (!thread.isPaid) return res.status(400).json({ message: 'This thread is free' });
 
-        // Check if thread is actually paid
-        if (!thread.isPaid) {
-            return res.status(400).json({ message: 'This thread is free' });
-        }
-
-        // Find user
         const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({ message: 'User not found' });
-        }
+        if (!user) return res.status(404).json({ message: 'User not found' });
 
-        // Check if user already purchased
-        if (user.purchasedThreads.includes(threadId)) {
+        // Already purchased?
+        if (user.purchasedThreads.some(id => id.toString() === threadId)) {
             return res.status(400).json({ message: 'You already own this thread' });
         }
 
-        // Check if user has enough stars
+        // Enough stars?
         if (user.stars < thread.price) {
             return res.status(400).json({
                 message: 'Insufficient stars',
@@ -742,21 +736,158 @@ const purchaseThread = async (req, res) => {
             });
         }
 
-        // Deduct stars and grant access
-        user.stars -= thread.price;
+        const price = thread.price;
+        const cfg = thread.earningsConfig || {};
+        const earners = (cfg.enabled && cfg.participatingEarners && cfg.participatingEarners.length > 0)
+            ? cfg.participatingEarners
+            : [];
+        const earnerSharePct = earners.length > 0 ? (cfg.earnerSharePercent || 10) : 0;
+
+        // Platform always gets 10%, author gets the rest after earners are paid
+        const platformCut = Math.floor(price * 10 / 100);
+        const earnerPool = Math.floor(price * earnerSharePct / 100);
+        const authorCut = price - platformCut - earnerPool;
+
+        // Distribute to earners
+        const distributedTo = [];
+        let actualEarnerPaid = 0;
+
+        if (earners.length > 0) {
+            const perEarner = Math.floor(earnerPool / earners.length);
+            actualEarnerPaid = perEarner * earners.length;
+            for (const earner of earners) {
+                const earnerId = earner._id || earner;
+                await User.findByIdAndUpdate(earnerId, { $inc: { stars: perEarner } });
+                distributedTo.push({ user: earnerId, amount: perEarner, role: 'earner' });
+            }
+        }
+
+        // Rounding leftover goes to platform
+        const finalPlatformCut = platformCut + (earnerPool - actualEarnerPaid);
+
+        // Credit author
+        await User.findByIdAndUpdate(thread.author, { $inc: { stars: authorCut } });
+        distributedTo.push({ user: thread.author, amount: authorCut, role: 'author' });
+
+        // Deduct from buyer and update records
+        user.stars -= price;
         user.purchasedThreads.push(threadId);
         await user.save();
+
+        thread.purchasers.push(userId);
+        await thread.save();
+
+        // Log the earning event
+        await Earning.create({
+            thread: threadId,
+            buyer: userId,
+            totalPaid: price,
+            authorEarning: authorCut,
+            earnerPoolTotal: actualEarnerPaid,
+            platformEarning: finalPlatformCut,
+            distributedTo
+        });
 
         res.json({
             message: 'Thread purchased successfully',
             stars: user.stars,
-            thread: {
-                _id: thread._id,
-                title: thread.title
-            }
+            thread: { _id: thread._id, title: thread.title }
         });
     } catch (error) {
         console.error('Purchase thread error:', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Update earnings distribution config for a thread (V2.2)
+// @route   PUT /api/resources/thread/:id/earnings-config
+// @access  Private (Thread author only)
+const updateEarningsConfig = async (req, res) => {
+    try {
+        const User = require('../models/User');
+        const { enabled, earnerSharePercent, participatingEarners } = req.body;
+
+        const thread = await Thread.findById(req.params.id);
+        if (!thread) return res.status(404).json({ message: 'Thread not found' });
+
+        if (thread.author.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ message: 'Only the thread author can configure earnings' });
+        }
+
+        // Validate if enabling with earners
+        const earnerList = participatingEarners || [];
+        const sharePct = earnerSharePercent ?? 10;
+
+        if (enabled && earnerList.length > 0 && sharePct > 0) {
+            if (sharePct < 1 || sharePct > 90) {
+                return res.status(400).json({ message: 'Earner share must be between 1% and 90%' });
+            }
+            const pool = Math.floor(thread.price * sharePct / 100);
+            if (pool < earnerList.length) {
+                return res.status(400).json({
+                    message: `${sharePct}% of ${thread.price} stars = ${pool} star(s) — not enough to give at least 1 star to each of the ${earnerList.length} earner(s). Increase the price, percentage, or reduce earners.`
+                });
+            }
+            // Validate all earner IDs exist
+            const validCount = await User.countDocuments({ _id: { $in: earnerList } });
+            if (validCount !== earnerList.length) {
+                return res.status(400).json({ message: 'One or more earner IDs are invalid' });
+            }
+        }
+
+        thread.earningsConfig = {
+            enabled: !!enabled,
+            earnerSharePercent: sharePct,
+            participatingEarners: earnerList
+        };
+        await thread.save();
+
+        const populated = await Thread.findById(thread._id)
+            .populate('earningsConfig.participatingEarners', 'name username avatar');
+
+        res.json({
+            message: 'Earnings configuration updated',
+            earningsConfig: populated.earningsConfig
+        });
+    } catch (error) {
+        console.error('updateEarningsConfig error:', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
+    }
+};
+
+// @desc    Get personal earnings history (threads where user is an earner or author)
+// @route   GET /api/resources/earnings/mine
+// @access  Private
+const getMyEarnings = async (req, res) => {
+    try {
+        const Earning = require('../models/Earning');
+        const userId = req.user._id;
+
+        const records = await Earning.find({ 'distributedTo.user': userId })
+            .populate('thread', 'title price')
+            .populate('buyer', 'name username')
+            .sort({ createdAt: -1 })
+            .limit(100);
+
+        const withMyShare = records.map(r => {
+            const mySlice = r.distributedTo.find(
+                d => d.user && d.user.toString() === userId.toString()
+            );
+            return {
+                _id: r._id,
+                thread: r.thread,
+                buyer: r.buyer,
+                totalPaid: r.totalPaid,
+                myShare: mySlice?.amount || 0,
+                myRole: mySlice?.role || 'earner',
+                platformEarning: r.platformEarning,
+                createdAt: r.createdAt
+            };
+        });
+
+        res.json(withMyShare);
+    } catch (error) {
+        console.error('getMyEarnings error:', error);
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
@@ -909,5 +1040,7 @@ module.exports = {
     purchaseThread,
     togglePinThread,
     getUserActivity,
-    getResourceMetadata
+    getResourceMetadata,
+    updateEarningsConfig,
+    getMyEarnings
 };

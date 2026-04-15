@@ -20,7 +20,9 @@ const {
     purchaseThread,
     togglePinThread,
     getUserActivity,
-    getResourceMetadata
+    getResourceMetadata,
+    updateEarningsConfig, // V2.2
+    getMyEarnings         // V2.2
 } = require('../controllers/resourceController');
 const { protect, optionalAuth } = require('../middleware/authMiddleware');
 const multer = require('multer');
@@ -59,5 +61,7 @@ router.post('/post/:id/review', protect, requestReview);
 router.post('/thread/:id/acknowledge', protect, acknowledgeInstructions);
 router.delete('/thread/:id/moderator/:userId', protect, removeModerator);
 router.put('/thread/:id/instructions', protect, updateInstructions);
+router.put('/thread/:id/earnings-config', protect, updateEarningsConfig); // V2.2: Revenue sharing config
+router.get('/earnings/mine', protect, getMyEarnings); // V2.2: Personal earnings history
 
 module.exports = router;

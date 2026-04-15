@@ -175,6 +175,12 @@ const promoteUser = async (req, res) => {
 
         await user.save();
 
+        // V2.2: Auto-join groups whose targetRoles match the user's new roles
+        const { syncUserRoleGroups } = require('./chatController');
+        syncUserRoleGroups(user._id).catch(err =>
+            console.error('syncUserRoleGroups failed silently:', err)
+        );
+
         res.json({
             message: `User roles updated successfully`,
             user: {

@@ -393,6 +393,52 @@ const getOrCreateProjectChat = async (req, res) => {
     }
 };
 
+// @desc    Internal helper — add user to all groups whose targetRoles match their roles
+// Called after role promotion in adminController.promoteUser
+const syncUserRoleGroups = async (userId) => {
+    try {
+        const user = await User.findById(userId).select('roles name username');
+        if (!user || !user.roles || user.roles.length === 0) return;
+
+        // Find groups that target any of this user's roles
+        const matchingGroups = await GroupChat.find({
+            targetRoles: { $in: user.roles },
+            members: { $ne: userId } // Only groups they're not already in
+        });
+
+        for (const group of matchingGroups) {
+            group.members.push(userId);
+            await group.save();
+
+            // Post a system announcement
+            await Message.create({
+                groupChat: group._id,
+                sender: userId,
+                content: `👋 ${user.name} has been automatically added based on their role.`,
+                isAnnouncement: true
+            });
+        }
+
+        return matchingGroups.length;
+    } catch (error) {
+        console.error('syncUserRoleGroups error:', error);
+        return 0;
+    }
+};
+
+// @desc    HTTP handler — sync current user into role-based groups
+// @route   POST /api/chat/groups/sync-roles
+// @access  Private
+const syncRoleGroups = async (req, res) => {
+    try {
+        const count = await syncUserRoleGroups(req.user._id);
+        res.json({ message: `Synced into ${count} group(s) based on your roles`, count });
+    } catch (error) {
+        console.error('syncRoleGroups error:', error);
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
 module.exports = {
     getRecentChats,
     getMessages,
@@ -402,5 +448,7 @@ module.exports = {
     getUnreadCount,
     requestJoinGroup,
     handleJoinRequest,
-    getOrCreateProjectChat
+    getOrCreateProjectChat,
+    syncUserRoleGroups,
+    syncRoleGroups
 };

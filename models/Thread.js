@@ -24,7 +24,14 @@ const threadSchema = mongoose.Schema({
     // V2.1: Targeted Resource Demographics (For Student Lead Access)
     university: { type: String },
     college: { type: String },
-    academicLevel: { type: String }
+    academicLevel: { type: String },
+
+    // V2.2: Revenue Sharing Configuration
+    earningsConfig: {
+        enabled: { type: Boolean, default: false },
+        earnerSharePercent: { type: Number, default: 10 }, // % given to earners (1-90), platform always gets 10%
+        participatingEarners: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }] // any users author picks
+    }
 }, {
     timestamps: true,
 });

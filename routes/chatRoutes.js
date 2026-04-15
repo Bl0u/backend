@@ -9,7 +9,8 @@ const {
     getUnreadCount,
     requestJoinGroup,
     handleJoinRequest,
-    getOrCreateProjectChat
+    getOrCreateProjectChat,
+    syncRoleGroups
 } = require('../controllers/chatController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -22,6 +23,7 @@ router.post('/groups/:id/members', addMemberToGroup);
 router.post('/groups/:id/join', requestJoinGroup);
 router.put('/requests/:id', handleJoinRequest);
 router.post('/project-chat', getOrCreateProjectChat);
+router.post('/groups/sync-roles', syncRoleGroups); // V2.2: Auto-join groups by role
 router.get('/:targetId', getMessages);
 router.post('/', sendMessage);
 

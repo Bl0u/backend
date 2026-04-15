@@ -135,48 +135,53 @@ const sendRequest = async (req, res) => {
 const getReceivedRequests = async (req, res) => {
     try {
         const userId = req.user.id;
-        const isAdmin = req.user.roles.includes('admin');
+        const isAdmin = req.user.roles && req.user.roles.includes('admin');
 
         // 1. Direct requests where user is the receiver
         const directQuery = { receiver: userId };
 
-        // 2. Community join requests where user is a moderator or admin
-        // First find groups where user is mod
-        const modGroups = await GroupChat.find({ moderators: userId }).select('_id communityId');
-        
-        // Find communities where user is a moderator
-        const Community = require('../models/Community');
-        const modCommunities = await Community.find({ moderators: userId }).select('_id');
-        const modCommunityIds = modCommunities.map(c => c._id);
+        let communityJoinQuery;
 
-        // Find all groups belonging to those communities
-        const inheritedGroups = await GroupChat.find({ communityId: { $in: modCommunityIds } }).select('_id');
-        
-        const allModGroupIds = [...new Set([
-            ...modGroups.map(g => g._id),
-            ...inheritedGroups.map(g => g._id)
-        ])];
+        if (isAdmin) {
+            // Admins see ALL community join requests across the platform
+            communityJoinQuery = { type: 'community_join' };
+        } else {
+            // 2. Community join requests where user is a moderator of the group/community
+            const modGroups = await GroupChat.find({ moderators: userId }).select('_id communityId');
 
-        const communityJoinQuery = {
-            type: 'community_join',
-            $or: [
-                { groupChat: { $in: allModGroupIds } },
-                { community: { $in: modCommunityIds } }
-            ]
-        };
+            const Community = require('../models/Community');
+            const modCommunities = await Community.find({ moderators: userId }).select('_id');
+            const modCommunityIds = modCommunities.map(c => c._id);
 
-        // If admin, they see all community joins? Or maybe just those they moderate?
-        // User said: "request is sent to the author of the group (admin in this case) and moderators assigned by the admin"
-        // Let's also include those where they are the creator of the group
-        const createdGroups = await GroupChat.find({ creator: userId }).select('_id');
-        const createdGroupIds = createdGroups.map(g => g._id);
+            // Groups belonging to communities the user moderates
+            const inheritedGroups = await GroupChat.find({ communityId: { $in: modCommunityIds } }).select('_id');
 
-        // Also include communities user created
-        const createdCommunities = await Community.find({ creator: userId }).select('_id');
-        const createdCommunityIds = createdCommunities.map(c => c._id);
+            // Groups the user created
+            const createdGroups = await GroupChat.find({ creator: userId }).select('_id');
 
-        communityJoinQuery.$or.push({ groupChat: { $in: createdGroupIds } });
-        communityJoinQuery.$or.push({ community: { $in: createdCommunityIds } });
+            // Communities the user created
+            const createdCommunities = await Community.find({ creator: userId }).select('_id');
+            const createdCommunityIds = createdCommunities.map(c => c._id);
+
+            const allModGroupIds = [...new Set([
+                ...modGroups.map(g => g._id.toString()),
+                ...inheritedGroups.map(g => g._id.toString()),
+                ...createdGroups.map(g => g._id.toString())
+            ])];
+
+            const allModCommunityIds = [...new Set([
+                ...modCommunityIds.map(id => id.toString()),
+                ...createdCommunityIds.map(id => id.toString())
+            ])];
+
+            communityJoinQuery = {
+                type: 'community_join',
+                $or: [
+                    { groupChat: { $in: allModGroupIds } },
+                    { community: { $in: allModCommunityIds } }
+                ]
+            };
+        }
 
         const requests = await Request.find({
             $or: [
@@ -195,6 +200,7 @@ const getReceivedRequests = async (req, res) => {
         res.status(500).json({ message: 'Server Error' });
     }
 };
+
 
 // @desc    Get sent requests
 // @route   GET /api/requests/sent
